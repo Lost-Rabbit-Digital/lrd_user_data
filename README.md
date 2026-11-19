@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License**
+**Requires Godot 4.3+** · **MIT License** · **Version 2.7.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -19,8 +19,7 @@ A Godot 4 editor plugin for browsing and selectively deleting your project's `us
 - [Usage](#usage)
 - [Features](#features)
 - [API Reference](#api-reference)
-- [Working with Save Files](#working-with-save-files)
-- [Handling Edge Cases](#handling-edge-cases)
+- [Save backups, test data and logs](#save-backups-test-data-and-logs)
 - [Running Tests](#running-tests)
 - [What's in user://](#whats-in-user)
 - [Contributing](#contributing)
@@ -61,7 +60,7 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Delete everything | Leave all items checked → **Delete Selected** |
 | Delete specific files | Uncheck **Select All** → tick what you want → **Delete Selected** |
 | Find a file | Type in the **Search** bar |
-| Filter by type | Use the **All Types** dropdown (Files, Folders, `.json`, `.cache`) |
+| Filter by type | Use the **All Types** dropdown: Files, Folders, `.json`, `.cache`, Backups & temp (`.bak`, `.tmp`), Test runner data (`user://test_runner/`), Logs (`.log`, `.jsonl`) |
 | Clear filters | Click **×** next to the dropdown |
 | Refresh the list | Click the **⟳** icon |
 | Open in file manager | Click **Open Folder** |
@@ -81,7 +80,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 
 - **File Tree** — Full recursive view of `user://` with per-item checkboxes
 - **Real-time Search** — Instantly filters the tree as you type; parent folders auto-expand
-- **Type Filters** — Narrow to Files Only, Folders Only, `.json`, or `.cache`
+- **Type Filters** — Narrow to Files Only, Folders Only, `.json`, `.cache`, save backups and temp files, test-runner data, or logs. A filter narrows what **Delete** removes too
 - **Bulk Selection** — Select All / Deselect All with indeterminate state support
 - **File Sizes** — Inline sizes on every entry; status bar totals the selection
 - **Open in OS** — Launch `user://` in your native file manager
@@ -138,20 +137,25 @@ Returns the total byte size of all files under `path`, recursively. Skips unread
 Applies the current search text and type filters to the tree. Matching parents auto-expand.
 
 #### `filter_tree_item(item: TreeItem, search_term: String, filter_types: Array[int]) → bool`
-Recursively filters tree items. Returns `true` if the item or any descendant matches.
+Recursively filters tree items (delegates to `UserDataOps.filter_tree`). Returns `true` if the item or any descendant matches.
 
-**Filter type IDs:**
-| ID | Filter |
-|----|--------|
-| 1 | Files Only |
-| 2 | Folders Only |
-| 3 | `.json` files |
-| 4 | `.cache` files |
+**Filter type IDs** (constants on `UserDataOps`; several active filters combine with OR):
+| ID | Constant | Shows |
+|----|----------|-------|
+| 1 | `FILTER_FILES` | Files |
+| 2 | `FILTER_FOLDERS` | Folders |
+| 3 | `FILTER_JSON` | `.json` files |
+| 4 | `FILTER_CACHE` | `.cache` files |
+| 5 | `FILTER_BACKUPS` | `.bak` and `.tmp` files (including `<save>.v<N>.bak`) |
+| 6 | `FILTER_TEST_DATA` | `user://test_runner` and everything in it, folders included |
+| 7 | `FILTER_LOGS` | `.log` and `.jsonl` files |
+
+A folder is shown as a container when something inside it matches; it matches by itself only under Folders or Test runner data.
 
 ### Utility Methods
 
 #### `format_file_size(bytes: int) → String`
-Formats byte counts for display.
+Formats byte counts for display (`UserDataOps.format_file_size`).
 
 ```gdscript
 format_file_size(0)        # "0 B"
@@ -160,207 +164,67 @@ format_file_size(1572864)  # "1.50 MB"
 ```
 
 #### `get_file_type_label(file_name: String) → String`
-Returns a human-readable type label based on file extension.
+Returns a human-readable type label based on file extension (`UserDataOps.get_file_type_label`).
 
 ```gdscript
-get_file_type_label("save.json")   # "JSON Data"
-get_file_type_label("icon.png")    # "PNG Image"
-get_file_type_label("player.gd")   # "GDScript"
-get_file_type_label("Makefile")    # "File"
+get_file_type_label("save.json")        # "JSON Data"
+get_file_type_label("save.json.bak")    # "Backup"
+get_file_type_label("runs.jsonl")       # "JSON Lines"
+get_file_type_label("Makefile")         # "File"
 ```
 
 #### `get_file_icon(file_name: String) → Texture2D`
 Returns an appropriate editor theme icon for the file type.
 
-**Supported extensions:** `.json`, `.cfg`, `.ini`, `.toml`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.svg`, `.wav`, `.ogg`, `.mp3`, `.tscn`, `.tres`, `.gd`, `.cache`, `.save`, `.dat`
+**Supported extensions:** `.json`, `.jsonl`, `.log`, `.bak`, `.tmp`, `.cfg`, `.ini`, `.toml`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.svg`, `.wav`, `.ogg`, `.mp3`, `.tscn`, `.tres`, `.gd`, `.cache`, `.save`, `.dat`
+
+### `UserDataOps` (editor-independent)
+
+`addons/manage_user_data/user_data_ops.gd` holds every rule that decides what is shown and what is deleted. It uses no editor API, so it runs headless and the tests call it directly:
+
+| Function | Does |
+|---|---|
+| `plan_deletion(root)` | The minimal list of paths a delete would remove: checked **and** visible only |
+| `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
+| `describe(paths)` | `{files, folders, bytes}` for the status bar |
+| `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |
+| `matches_filters(name, path, is_folder, search, filters)` / `matches_type(...)` | One row's match |
+| `is_safe_target(path)`, `is_test_data(path)`, `is_backup_or_temp(name)` | Path predicates |
+| `calculate_folder_size(path)`, `delete_directory_contents(path)` | Folder helpers; never follow symlinks |
+| `format_file_size(bytes)`, `get_file_type_label(name)` | Display helpers |
 
 ### UI Helper Methods
 
 #### `propagate_check_state(item: TreeItem, checked: bool) → void`
 Recursively applies a checked/unchecked state to all children of the given tree item.
 
-#### `UserDataOps.plan_deletion(root: TreeItem) → Array[String]`
-The minimal list of paths a delete would remove (replaces `collect_checked_items` / `collect_checked_items_with_stats`, which ignored filters and partial folder selections). `UserDataOps.describe(paths)` returns `{files, folders, bytes}` for the status bar.
-
 #### `update_warning_label() → void`
 Updates the status bar with the current selection count, size, and warning text.
 
 ---
 
-## Working with Save Files
+## Save backups, test data and logs
 
-This plugin helps you manage any files your game writes to `user://`. Here are common patterns used by Godot games and how this plugin helps during development.
+This plugin inspects and clears what a game writes; it does not tell a game how to write it. For crash-safe saves (atomic writes, a `.bak` to fall back on, save slots, versioned migrations) use [**lrd_save**](https://github.com/Lost-Rabbit-Digital/lrd_save); for playtest logs and keeping tests out of the real profile use [**lrd_run_log**](https://github.com/Lost-Rabbit-Digital/lrd_run_log). The plugin knows their file conventions, and they are common in other games too:
 
-### JSON Save Files
+| You see | Written by | Filter | Safe to delete? |
+|---|---|---|---|
+| `progress.json.bak` | lrd_save: the previous good save, loaded when the save is corrupt | Backups & temp | Only while the save itself is intact |
+| `progress.json.tmp` | A save write that never finished | Backups & temp | Yes |
+| `progress.json.v2.bak` | lrd_save: the save as it was before a version migration | Backups & temp | Yes, once the migration is trusted |
+| `test_runner/…` | Tests and bots, redirected away from the real profile (lrd_run_log's `LRDUserPaths`) | Test runner data | Yes, always |
+| `*.jsonl` | lrd_run_log playtest rows, one JSON object per line | Logs | Only after you've collected them |
+| `logs/godot.log` | Godot's engine log | Logs | Yes |
 
-```gdscript
-# Saving
-var save_data := {"version": 2, "player_name": "Hero", "level": 5}
-var file := FileAccess.open("user://save.json", FileAccess.WRITE)
-file.store_string(JSON.stringify(save_data, "\t"))
-file.close()
+Common clean-ups:
 
-# Loading with error handling
-var file := FileAccess.open("user://save.json", FileAccess.READ)
-if file == null:
-    push_error("Save file not found")
-    return
-
-var json := JSON.new()
-var err := json.parse(file.get_as_text())
-file.close()
-
-if err != OK:
-    push_error("Corrupted save file: %s" % json.get_error_message())
-    return
-
-var data: Dictionary = json.data
-```
-
-### ConfigFile Save Data
-
-```gdscript
-# Saving
-var cfg := ConfigFile.new()
-cfg.set_value("meta", "version", 2)
-cfg.set_value("player", "name", "Hero")
-cfg.set_value("player", "score", 1500)
-cfg.save("user://settings.cfg")
-
-# Loading
-var cfg := ConfigFile.new()
-if cfg.load("user://settings.cfg") != OK:
-    push_error("Failed to load settings")
-    return
-
-var version := cfg.get_value("meta", "version", 1)
-var name := cfg.get_value("player", "name", "Unknown")
-```
-
-### Binary Save Files
-
-```gdscript
-# Saving
-var file := FileAccess.open("user://world.dat", FileAccess.WRITE)
-file.store_32(0x53415645)  # Magic number "SAVE"
-file.store_32(2)            # Version
-file.store_float(player.position.x)
-file.store_float(player.position.y)
-file.store_pascal_string(player.name)
-file.close()
-
-# Loading with validation
-var file := FileAccess.open("user://world.dat", FileAccess.READ)
-if file == null:
-    return
-
-var magic := file.get_32()
-if magic != 0x53415645:
-    push_error("Not a valid save file")
-    file.close()
-    return
-
-var version := file.get_32()
-if version > 2:
-    push_error("Save file from newer game version (v%d)" % version)
-    file.close()
-    return
-```
-
----
-
-## Handling Edge Cases
-
-### Corrupted Save Files
-
-Always validate before trusting file contents:
-
-```gdscript
-func load_save_safe(path: String) -> Variant:
-    if not FileAccess.file_exists(path):
-        return null
-
-    var file := FileAccess.open(path, FileAccess.READ)
-    if file == null:
-        push_warning("Cannot open: %s (error %d)" % [path, FileAccess.get_open_error()])
-        return null
-
-    var content := file.get_as_text()
-    file.close()
-
-    if content.strip_edges().is_empty():
-        push_warning("Empty save file: %s" % path)
-        return null
-
-    var json := JSON.new()
-    if json.parse(content) != OK:
-        push_error("Corrupted save: %s — %s" % [path, json.get_error_message()])
-        return null
-
-    return json.data
-```
-
-### Version Mismatches
-
-Version your save format and handle migrations:
-
-```gdscript
-const CURRENT_SAVE_VERSION := 3
-
-func load_and_migrate(path: String) -> Dictionary:
-    var data := load_save_safe(path)
-    if data == null or not data is Dictionary:
-        return {}
-
-    var version := int(data.get("version", 1))
-
-    if version > CURRENT_SAVE_VERSION:
-        push_error("Save from future version %d (current: %d)" % [version, CURRENT_SAVE_VERSION])
-        return {}
-
-    # Apply migrations sequentially
-    if version < 2:
-        # v1 → v2: rename "name" to "player_name"
-        if data.has("name"):
-            data["player_name"] = data["name"]
-            data.erase("name")
-        data["version"] = 2
-
-    if version < 3:
-        # v2 → v3: add inventory array
-        if not data.has("inventory"):
-            data["inventory"] = []
-        data["version"] = 3
-
-    return data
-```
-
-### ConfigFile Version Migration
-
-```gdscript
-func migrate_cfg(path: String) -> ConfigFile:
-    var cfg := ConfigFile.new()
-    if cfg.load(path) != OK:
-        return cfg
-
-    var version := int(cfg.get_value("meta", "version", 1))
-
-    if version < 2:
-        # Rename section key
-        var old_val = cfg.get_value("player", "name", "")
-        cfg.set_value("player", "display_name", old_val)
-        cfg.erase_section_key("player", "name")
-        cfg.set_value("meta", "version", 2)
-        cfg.save(path)
-
-    return cfg
-```
-
----
+- **Reset test pollution:** Test runner data → leave all checked → **Delete Selected**. Removes `user://test_runner` whole and nothing else.
+- **Test a corrupt-save fallback:** search the save's name, uncheck the `.bak`, delete the save, run the game: it should load the backup.
+- **Start a fresh playthrough but keep settings:** uncheck `settings.cfg` (or filter to `.json`) before deleting.
 
 ## Running Tests
 
-The test suite validates the plugin's core logic — formatting, filtering, file operations, and migration patterns.
+Every suite calls the plugin's real code in `user_data_ops.gd`; nothing is re-implemented in the tests.
 
 ### Prerequisites
 
@@ -389,26 +253,22 @@ godot --headless --path . --script tests/test_deletion_safety.gd
 | Test File | What It Covers |
 |---|---|
 | `test_format_file_size.gd` | Byte/KB/MB formatting, boundary values |
-| `test_file_type_label.gd` | Extension → label mapping, case insensitivity, unknown extensions |
-| `test_filter_logic.gd` | Search matching, type filters, combined filters, depth sorting, propagation |
+| `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown extensions |
+| `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), and what a filtered delete plans to remove |
 | `test_deletion_safety.gd` | The plugin's real deletion code against real files: unchecked children survive, filtered-out items survive, whole-folder deletes, refusal outside `user://`, dotfiles, status-bar stats |
-| `test_file_operations.gd` | JSON/CFG/binary save+load, corrupted files, empty files, recursive delete, version migration, folder size calculation |
+| `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
 
 ### CI Integration
 
-Add to your GitHub Actions workflow:
+`.github/workflows/tests.yml` imports the project on Godot 4.7 and runs `tests/run_all.sh`. To run the same checks in your own fork's CI:
 
 ```yaml
-- name: Run plugin tests
-  uses: chickensoft-games/setup-godot@v2
+- uses: chickensoft-games/setup-godot@v1
   with:
-    version: 4.4.1
+    version: 4.7.0
     use-dotnet: false
-
-- run: godot --headless --path . --script tests/test_format_file_size.gd
-- run: godot --headless --path . --script tests/test_file_type_label.gd
-- run: godot --headless --path . --script tests/test_filter_logic.gd
-- run: godot --headless --path . --script tests/test_file_operations.gd
+- run: godot --headless --editor --quit || true
+- run: GODOT_BIN=godot bash tests/run_all.sh
 ```
 
 ---
@@ -420,7 +280,8 @@ Godot writes to `user://` when your game uses paths like `"user://save.json"`. C
 | Extension | Source |
 |---|---|
 | `.cfg` / `.json` | Save data, settings |
-| `.log` | Engine/game log files |
+| `.log` / `.jsonl` | Engine/game logs, playtest run logs |
+| `.bak` / `.tmp` | Save backups, unfinished writes |
 | `.cache` | Engine/game caches |
 | `.save` / `.dat` | Binary save files |
 
@@ -440,20 +301,22 @@ Contributions are welcome! Here's how to get started:
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-change`
-3. Run the tests: `bash tests/run_all.sh`
+3. Run the tests: `GODOT_BIN=/path/to/godot-4.7 bash tests/run_all.sh`
 4. Submit a pull request
+
+Coding agents: read [`AGENTS.md`](AGENTS.md) first (layout, commands, deletion-safety rules).
 
 ### Development Setup
 
 ```bash
-git clone https://github.com/Lost-Rabbit-Digital/manage_user_data_plugin.git
-cd manage_user_data_plugin
+git clone https://github.com/Lost-Rabbit-Digital/lrd_user_data.git
+cd lrd_user_data
 # Open in Godot 4.3+ and enable the plugin
 ```
 
 ### Reporting Issues
 
-- [GitHub Issues](https://github.com/Lost-Rabbit-Digital/manage_user_data_plugin/issues)
+- [GitHub Issues](https://github.com/Lost-Rabbit-Digital/lrd_user_data/issues)
 - [Discord Community](https://discord.gg/Y7caBf7gBj)
 
 ---

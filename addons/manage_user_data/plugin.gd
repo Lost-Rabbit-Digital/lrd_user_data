@@ -123,15 +123,18 @@ func show_confirmation_dialog() -> void:
 	filter_menu_button.tooltip_text = "Filter by file type"
 	var popup := filter_menu_button.get_popup()
 	popup.hide_on_checkable_item_selection = false
-	popup.add_check_item("Files Only", 1)
-	popup.add_check_item("Folders Only", 2)
-	popup.add_check_item(".json", 3)
-	popup.add_check_item(".cache", 4)
-	popup.set_item_icon(0, base.get_theme_icon("File", "EditorIcons"))
-	popup.set_item_icon(1, base.get_theme_icon("Folder", "EditorIcons"))
-	popup.set_item_icon(2, base.get_theme_icon("File", "EditorIcons"))
-	popup.set_item_icon(3, base.get_theme_icon("File", "EditorIcons"))
-	popup.set_item_icon_modulate(1, Color(1, 0.71, 0.26, 1))
+	var filter_icons := {
+		UserDataOps.FILTER_FOLDERS: "Folder",
+		UserDataOps.FILTER_BACKUPS: "History",
+		UserDataOps.FILTER_TEST_DATA: "Debug",
+		UserDataOps.FILTER_LOGS: "Script",
+	}
+	for filter_id: int in UserDataOps.FILTER_LABELS:
+		popup.add_check_item(UserDataOps.FILTER_LABELS[filter_id], filter_id)
+		var idx := popup.get_item_index(filter_id)
+		popup.set_item_icon(idx, base.get_theme_icon(filter_icons.get(filter_id, "File"), "EditorIcons"))
+		if filter_id == UserDataOps.FILTER_FOLDERS:
+			popup.set_item_icon_modulate(idx, Color(1, 0.71, 0.26, 1))
 	popup.id_pressed.connect(_on_filter_type_toggled)
 	search_hbox.add_child(filter_menu_button)
 	_apply_outline_to_button(filter_menu_button, base)
@@ -578,47 +581,9 @@ func apply_filters() -> void:
 
 
 ## Recursively filters tree items. Returns [code]true[/code] if the item or
-## any descendant matches the active filters.
+## any descendant matches the active filters. See [code]UserDataOps.filter_tree()[/code].
 func filter_tree_item(item: TreeItem, search_term: String, filter_types: Array[int]) -> bool:
-	if item == null:
-		return false
-
-	var item_name := item.get_text(0).to_lower()
-	var item_type_text := item.get_text(1)
-	var is_folder: bool = item_type_text.begins_with("Folder") or item_type_text == "Directory"
-
-	var matches_search: bool = search_term.is_empty() or item_name.contains(search_term)
-
-	var matches_type := false
-	if filter_types.is_empty():
-		matches_type = true
-	else:
-		for ft in filter_types:
-			match ft:
-				1: if not is_folder: matches_type = true
-				2: if is_folder: matches_type = true
-				3: if not is_folder and item_name.ends_with(".json"): matches_type = true
-				4: if not is_folder and item_name.ends_with(".cache"): matches_type = true
-			if matches_type:
-				break
-
-	var any_child_visible := false
-	var child := item.get_first_child()
-	while child != null:
-		if filter_tree_item(child, search_term, filter_types):
-			any_child_visible = true
-		child = child.get_next()
-
-	# If only non-folder filters are active and this is a folder, use folder as a container
-	var has_folder_type_filter := filter_types.is_empty() or filter_types.has(2)
-	var should_be_visible: bool
-	if is_folder and not has_folder_type_filter:
-		should_be_visible = any_child_visible
-	else:
-		should_be_visible = (matches_search and matches_type) or any_child_visible
-
-	item.visible = should_be_visible
-	return should_be_visible
+	return UserDataOps.filter_tree(item, search_term, filter_types)
 
 
 ## Expands folders that contain at least one visible child after filtering.
@@ -626,10 +591,7 @@ func expand_matching_parents(item: TreeItem) -> void:
 	if item == null:
 		return
 
-	var item_type_text := item.get_text(1)
-	var is_folder: bool = item_type_text.begins_with("Folder") or item_type_text == "Directory"
-
-	if is_folder and item.visible:
+	if UserDataOps.is_folder_item(item) and item.visible:
 		var child := item.get_first_child()
 		while child != null:
 			if child.visible:
@@ -670,65 +632,24 @@ func get_file_icon(file_name: String) -> Texture2D:
 			return base.get_theme_icon("File", "EditorIcons")
 		"save", "dat":
 			return base.get_theme_icon("Save", "EditorIcons")
+		"bak", "tmp":
+			return base.get_theme_icon("History", "EditorIcons")
+		"log", "jsonl":
+			return base.get_theme_icon("Script", "EditorIcons")
 		_:
 			return base.get_theme_icon("File", "EditorIcons")
 
 
 ## Returns a human-readable type label for a file based on its extension.
 func get_file_type_label(file_name: String) -> String:
-	var ext := file_name.get_extension().to_lower()
-	match ext:
-		"json":
-			return "JSON Data"
-		"cfg":
-			return "Config File"
-		"ini":
-			return "INI Config"
-		"toml":
-			return "TOML Config"
-		"png":
-			return "PNG Image"
-		"jpg", "jpeg":
-			return "JPEG Image"
-		"webp":
-			return "WebP Image"
-		"bmp":
-			return "BMP Image"
-		"svg":
-			return "SVG Image"
-		"wav":
-			return "WAV Audio"
-		"ogg":
-			return "OGG Audio"
-		"mp3":
-			return "MP3 Audio"
-		"tscn":
-			return "Packed Scene"
-		"tres":
-			return "Resource"
-		"gd":
-			return "GDScript"
-		"cache":
-			return "Cache File"
-		"save":
-			return "Save File"
-		"dat":
-			return "Data File"
-		_:
-			return ext.to_upper() + " File" if not ext.is_empty() else "File"
+	return UserDataOps.get_file_type_label(file_name)
 
 
 ## Returns a human-readable string for the given byte count.
 func format_file_size(bytes: int) -> String:
-	if bytes < 1024:
-		return "%d B" % bytes
-	elif bytes < 1024 * 1024:
-		return "%.2f KB" % (bytes / 1024.0)
-	else:
-		return "%.2f MB" % (bytes / (1024.0 * 1024.0))
+	return UserDataOps.format_file_size(bytes)
 
 
-## Shows the help dialog with plugin info and credits.
 func _on_help_pressed() -> void:
 	if help_dialog:
 		help_dialog.grab_focus()
@@ -840,7 +761,7 @@ func _on_help_pressed() -> void:
 		["1.  Open the plugin", "Click \"User Data\" in the editor toolbar to open the main window."],
 		["2.  Browse files", "The tree lists every file and folder inside user://. Folders are shown expanded by default."],
 		["3.  Select items", "To delete everything: leave all items checked. To delete specific files: uncheck \"Select All\", then tick only what you want."],
-		["4.  Search & filter", "Type in the search bar to find items by name. Use the \"All Types\" dropdown to show only files, folders, .json, or .cache entries."],
+		["4.  Search & filter", "Type in the search bar to find items by name. Use the \"All Types\" dropdown to show only files, folders, .json, .cache, backups and temp files, test-runner data, or logs. Only visible items are ever deleted, so a filter also narrows what Delete removes."],
 		["5.  Review", "The status bar shows a live count and total size of your selection before you commit."],
 		["6.  Delete", "Click \"Delete Selected\" and confirm. Deletion is permanent and cannot be undone."],
 	]
@@ -873,7 +794,7 @@ func _on_help_pressed() -> void:
 	var features: Array = [
 		["File Tree", "Full visual tree of user:// with per-item checkboxes for fine-grained selection."],
 		["Real-time Search", "Instantly filters the tree as you type — matching parent folders expand automatically."],
-		["Type Filters", "Narrow the view to Files Only, Folders Only, .json, or .cache entries via the dropdown."],
+		["Type Filters", "Narrow the view (and what Delete removes) to files, folders, .json, .cache, save backups and temp files (.bak, .tmp), test-runner data (user://test_runner/), or logs (.log, .jsonl)."],
 		["Bulk Selection", "\"Select All\" selects or deselects every visible item in one click."],
 		["File Sizes", "Inline file sizes on every entry; the status bar totals the size of your current selection."],
 		["Open in OS", "\"Open Folder\" launches user:// in your operating system's native file manager."],

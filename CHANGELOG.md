@@ -1,0 +1,17 @@
+# Changelog
+
+Notable changes to Manage User Data. Earlier versions are in the git history and the Godot Asset Library listing.
+
+## [Unreleased]
+
+## [2.7.0] (2026-11-19)
+
+- New type filters: **Backups & temp** (`.bak`, `.tmp`, including `<save>.v<N>.bak` pre-migration copies), **Test runner data** (`user://test_runner/` and everything in it, empty folders included), and **Logs** (`.log`, `.jsonl`). Only visible items are deleted, so a filter narrows a delete too: "Test runner data → Delete Selected" removes `user://test_runner` and nothing else.
+- Type labels and icons for `.bak` ("Backup"), `.tmp` ("Temp File"), `.jsonl` ("JSON Lines") and `.log` ("Log File").
+- Filtering, type labels and size formatting moved into the editor-independent `user_data_ops.gd` (`filter_tree`, `matches_filters`, `matches_type`, `get_file_type_label`, `format_file_size`, `FILTER_*` constants); the plugin delegates to it. No behaviour change for the existing filters.
+- Tests now call the plugin's real code. `test_format_file_size`, `test_file_type_label` and `test_filter_logic` used to test private copies of the functions, and `test_file_operations` tested Godot's own save/load APIs; they would have passed with the plugin broken. `test_filter_logic` now filters real `Tree`s and checks what a filtered delete plans to remove.
+- README: the save-format tutorial ("Working with Save Files", "Handling Edge Cases") is replaced by a section on the files save libraries and test runners leave behind, pointing to `lrd_save` for writing saves. Repo links point at `lrd_user_data`; the CI snippet matches the real workflow. New `AGENTS.md` (and `CLAUDE.md`) for coding agents, and this changelog.
+
+## [2.6.0]
+
+- Deletion honours unchecked and filtered-out items (only checked and visible items are deleted; a partly selected folder is kept), refuses paths outside `user://`, removes symlinks without following them. Tests run headless on Godot 4.7.

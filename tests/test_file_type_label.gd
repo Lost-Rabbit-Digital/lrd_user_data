@@ -2,6 +2,8 @@ extends SceneTree
 ## Unit tests for get_file_type_label().
 ## Run via: godot --headless --script tests/test_file_type_label.gd
 
+const Ops := preload("res://addons/manage_user_data/user_data_ops.gd")
+
 var _pass_count := 0
 var _fail_count := 0
 
@@ -16,47 +18,9 @@ func _initialize() -> void:
 	quit(0 if _fail_count == 0 else 1)
 
 
+# The plugin's real implementation, not a copy.
 func get_file_type_label(file_name: String) -> String:
-	var ext := file_name.get_extension().to_lower()
-	match ext:
-		"json":
-			return "JSON Data"
-		"cfg":
-			return "Config File"
-		"ini":
-			return "INI Config"
-		"toml":
-			return "TOML Config"
-		"png":
-			return "PNG Image"
-		"jpg", "jpeg":
-			return "JPEG Image"
-		"webp":
-			return "WebP Image"
-		"bmp":
-			return "BMP Image"
-		"svg":
-			return "SVG Image"
-		"wav":
-			return "WAV Audio"
-		"ogg":
-			return "OGG Audio"
-		"mp3":
-			return "MP3 Audio"
-		"tscn":
-			return "Packed Scene"
-		"tres":
-			return "Resource"
-		"gd":
-			return "GDScript"
-		"cache":
-			return "Cache File"
-		"save":
-			return "Save File"
-		"dat":
-			return "Data File"
-		_:
-			return ext.to_upper() + " File" if not ext.is_empty() else "File"
+	return Ops.get_file_type_label(file_name)
 
 
 func test_known_extensions() -> void:
@@ -79,6 +43,11 @@ func test_known_extensions() -> void:
 	_assert_eq(get_file_type_label("data.cache"), "Cache File", "cache")
 	_assert_eq(get_file_type_label("game.save"), "Save File", "save")
 	_assert_eq(get_file_type_label("world.dat"), "Data File", "dat")
+	_assert_eq(get_file_type_label("runs.jsonl"), "JSON Lines", "jsonl")
+	_assert_eq(get_file_type_label("godot.log"), "Log File", "log")
+	_assert_eq(get_file_type_label("progress.json.bak"), "Backup", "bak (lrd_save backup)")
+	_assert_eq(get_file_type_label("progress.json.v2.bak"), "Backup", "bak (pre-migration copy)")
+	_assert_eq(get_file_type_label("progress.json.tmp"), "Temp File", "tmp")
 
 
 func test_case_insensitivity() -> void:

@@ -4,6 +4,11 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.8.0] (2026-11-20)
+
+- **Zip Selected…**: saves exactly what Delete would remove (checked and visible; folders whole only when fully selected) as one `.zip`, with paths relative to `user://`, to attach to a bug report or keep as a snapshot before deleting. Hidden files inside folders are included; symbolic links and anything outside `user://` are skipped, and the archive is never added to itself. Defaults to the desktop with a `<project>_user_data_<timestamp>.zip` name and reveals the file when done.
+- `UserDataOps.zip_paths()`, `selected_paths()` and `default_zip_name()`, tested headless in `tests/test_zip.gd`.
+
 ## [2.7.0] (2026-11-19)
 
 - New type filters: **Backups & temp** (`.bak`, `.tmp`, including `<save>.v<N>.bak` pre-migration copies), **Test runner data** (`user://test_runner/` and everything in it, empty folders included), and **Logs** (`.log`, `.jsonl`). Only visible items are deleted, so a filter narrows a delete too: "Test runner data → Delete Selected" removes `user://test_runner` and nothing else.

@@ -17,6 +17,35 @@ const COL_PATH := 1
 const COL_CHECK := 2
 const ROOT_PATH := "user://"
 
+## Type filter IDs, as used by the dialog's "All Types" menu. Several active
+## filters combine with OR.
+const FILTER_FILES := 1
+const FILTER_FOLDERS := 2
+const FILTER_JSON := 3
+const FILTER_CACHE := 4
+## Backup and temp files left by crash-safe save code (lrd_save writes
+## `<save>.bak`, `<save>.tmp` and `<save>.v<N>.bak`; many games use `.bak`).
+const FILTER_BACKUPS := 5
+## Everything under [constant TEST_ROOT], where tests and bots write instead of
+## the real profile (lrd_run_log's LRDUserPaths), folders included.
+const FILTER_TEST_DATA := 6
+## Log files: Godot's `.log` and JSON Lines run logs (`.jsonl`, lrd_run_log).
+const FILTER_LOGS := 7
+
+## Menu label for each filter ID, in menu order.
+const FILTER_LABELS := {
+	FILTER_FILES: "Files Only",
+	FILTER_FOLDERS: "Folders Only",
+	FILTER_JSON: ".json",
+	FILTER_CACHE: ".cache",
+	FILTER_BACKUPS: "Backups & temp (.bak, .tmp)",
+	FILTER_TEST_DATA: "Test runner data (test_runner/)",
+	FILTER_LOGS: "Logs (.log, .jsonl)",
+}
+
+## Where test runners and bots write instead of the player's profile.
+const TEST_ROOT := "user://test_runner"
+
 
 ## Returns the minimal list of paths to delete for the current tree state.
 ## No returned path is inside another returned path.
@@ -171,3 +200,158 @@ static func _file_size(path: String) -> int:
 static func _is_link(path: String) -> bool:
 	var parent := DirAccess.open(path.get_base_dir())
 	return parent != null and parent.is_link(path.get_file())
+
+
+# -- Display helpers -----------------------------------------------------------
+
+
+## Human-readable size: "512 B", "1.50 KB", "2.00 MB".
+static func format_file_size(bytes: int) -> String:
+	if bytes < 1024:
+		return "%d B" % bytes
+	elif bytes < 1024 * 1024:
+		return "%.2f KB" % (bytes / 1024.0)
+	else:
+		return "%.2f MB" % (bytes / (1024.0 * 1024.0))
+
+
+## Human-readable type label from a file's extension ("JSON Data", "Backup").
+static func get_file_type_label(file_name: String) -> String:
+	var ext := file_name.get_extension().to_lower()
+	match ext:
+		"json":
+			return "JSON Data"
+		"jsonl":
+			return "JSON Lines"
+		"log":
+			return "Log File"
+		"bak":
+			return "Backup"
+		"tmp":
+			return "Temp File"
+		"cfg":
+			return "Config File"
+		"ini":
+			return "INI Config"
+		"toml":
+			return "TOML Config"
+		"png":
+			return "PNG Image"
+		"jpg", "jpeg":
+			return "JPEG Image"
+		"webp":
+			return "WebP Image"
+		"bmp":
+			return "BMP Image"
+		"svg":
+			return "SVG Image"
+		"wav":
+			return "WAV Audio"
+		"ogg":
+			return "OGG Audio"
+		"mp3":
+			return "MP3 Audio"
+		"tscn":
+			return "Packed Scene"
+		"tres":
+			return "Resource"
+		"gd":
+			return "GDScript"
+		"cache":
+			return "Cache File"
+		"save":
+			return "Save File"
+		"dat":
+			return "Data File"
+		_:
+			return ext.to_upper() + " File" if not ext.is_empty() else "File"
+
+
+# -- Filtering -----------------------------------------------------------------
+
+
+## True when [param path] is the test-runner folder or anything inside it.
+static func is_test_data(path: String) -> bool:
+	return path == TEST_ROOT or path.begins_with(TEST_ROOT + "/")
+
+
+## True for a backup or temp file a save system leaves beside a save.
+static func is_backup_or_temp(file_name: String) -> bool:
+	var lower := file_name.to_lower()
+	return lower.ends_with(".bak") or lower.ends_with(".tmp")
+
+
+## Whether an item matches [param filter_types] (any of them; none = all).
+static func matches_type(file_name: String, path: String, is_folder: bool, filter_types: Array[int]) -> bool:
+	if filter_types.is_empty():
+		return true
+	var lower := file_name.to_lower()
+	for ft: int in filter_types:
+		match ft:
+			FILTER_FILES:
+				if not is_folder:
+					return true
+			FILTER_FOLDERS:
+				if is_folder:
+					return true
+			FILTER_JSON:
+				if not is_folder and lower.ends_with(".json"):
+					return true
+			FILTER_CACHE:
+				if not is_folder and lower.ends_with(".cache"):
+					return true
+			FILTER_BACKUPS:
+				if not is_folder and is_backup_or_temp(lower):
+					return true
+			FILTER_TEST_DATA:
+				if is_test_data(path):
+					return true
+			FILTER_LOGS:
+				if not is_folder and (lower.ends_with(".log") or lower.ends_with(".jsonl")):
+					return true
+	return false
+
+
+## Whether an item matches both the search text (case-insensitive substring of
+## its name) and the type filters.
+static func matches_filters(
+	file_name: String, path: String, is_folder: bool, search_term: String, filter_types: Array[int]
+) -> bool:
+	var matches_search := search_term.is_empty() or file_name.to_lower().contains(search_term.to_lower())
+	return matches_search and matches_type(file_name, path, is_folder, filter_types)
+
+
+## True for a tree row that is a folder (not a file or a link).
+static func is_folder_item(item: TreeItem) -> bool:
+	var type_text := item.get_text(1)
+	return type_text.begins_with("Folder") or type_text == "Directory"
+
+
+## Sets [code]visible[/code] on [param item] and its descendants for the search
+## text and type filters. Returns true if the item or any descendant is shown.
+##
+## A folder is shown when it matches itself (only possible with a filter that
+## matches folders: Folders Only or Test runner data) or when anything inside
+## it is shown. Hidden rows are never deleted ([method plan_deletion]), so a
+## filter narrows a delete as well as the view.
+static func filter_tree(item: TreeItem, search_term: String, filter_types: Array[int]) -> bool:
+	if item == null:
+		return false
+	var is_folder := is_folder_item(item)
+	var any_child_visible := false
+	var child := item.get_first_child()
+	while child != null:
+		if filter_tree(child, search_term, filter_types):
+			any_child_visible = true
+		child = child.get_next()
+	var folder_can_match := (
+		filter_types.is_empty() or filter_types.has(FILTER_FOLDERS) or filter_types.has(FILTER_TEST_DATA)
+	)
+	var self_matches := matches_filters(item.get_text(0), _path_of(item), is_folder, search_term, filter_types)
+	var shown: bool
+	if is_folder and not folder_can_match:
+		shown = any_child_visible
+	else:
+		shown = self_matches or any_child_visible
+	item.visible = shown
+	return shown

@@ -2,6 +2,8 @@ extends SceneTree
 ## Unit tests for format_file_size().
 ## Run via: godot --headless --script tests/test_format_file_size.gd
 
+const Ops := preload("res://addons/manage_user_data/user_data_ops.gd")
+
 var _pass_count := 0
 var _fail_count := 0
 
@@ -18,13 +20,9 @@ func _initialize() -> void:
 	quit(0 if _fail_count == 0 else 1)
 
 
+# The plugin's real implementation, not a copy.
 func format_file_size(bytes: int) -> String:
-	if bytes < 1024:
-		return "%d B" % bytes
-	elif bytes < 1024 * 1024:
-		return "%.2f KB" % (bytes / 1024.0)
-	else:
-		return "%.2f MB" % (bytes / (1024.0 * 1024.0))
+	return Ops.format_file_size(bytes)
 
 
 func test_zero_bytes() -> void:

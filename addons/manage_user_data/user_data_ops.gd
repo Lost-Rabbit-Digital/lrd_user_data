@@ -89,8 +89,11 @@ static func _path_of(item: TreeItem) -> String:
 static func is_safe_target(path: String) -> bool:
 	if not path.begins_with(ROOT_PATH) or path == ROOT_PATH or path.trim_suffix("/") == "user:":
 		return false
-	for part: String in path.trim_prefix(ROOT_PATH).split("/"):
-		if part == "..":
+	# Treat "\\" as a separator too (Windows resolves it), and reject empty,
+	# "." and ".." segments: "user://.", "user:///" and "user://a\..\.."
+	# would otherwise resolve to user:// itself or escape it.
+	for part: String in path.trim_prefix(ROOT_PATH).replace("\\", "/").split("/"):
+		if part == "" or part == "." or part == "..":
 			return false
 	return true
 

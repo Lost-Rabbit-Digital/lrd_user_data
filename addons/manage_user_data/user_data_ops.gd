@@ -205,14 +205,16 @@ static func _is_link(path: String) -> bool:
 # -- Display helpers -----------------------------------------------------------
 
 
-## Human-readable size: "512 B", "1.50 KB", "2.00 MB".
+## Human-readable size: "512 B", "1.50 KB", "2.00 MB", "1.25 GB".
 static func format_file_size(bytes: int) -> String:
 	if bytes < 1024:
 		return "%d B" % bytes
 	elif bytes < 1024 * 1024:
 		return "%.2f KB" % (bytes / 1024.0)
-	else:
+	elif bytes < 1024 * 1024 * 1024:
 		return "%.2f MB" % (bytes / (1024.0 * 1024.0))
+	else:
+		return "%.2f GB" % (bytes / (1024.0 * 1024.0 * 1024.0))
 
 
 ## Human-readable type label from a file's extension ("JSON Data", "Backup").

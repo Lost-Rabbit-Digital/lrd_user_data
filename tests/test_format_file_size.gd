@@ -53,6 +53,9 @@ func test_boundary_1024() -> void:
 
 func test_boundary_1mb() -> void:
 	_assert_eq(format_file_size(1024 * 1024), "1.00 MB", "exactly 1 MB")
+	_assert_eq(format_file_size(1024 * 1024 * 1024 - 1), "1024.00 MB", "just under 1 GB")
+	_assert_eq(format_file_size(1024 * 1024 * 1024), "1.00 GB", "exactly 1 GB")
+	_assert_eq(format_file_size(5 * 1024 * 1024 * 1024), "5.00 GB", "5 GB")
 
 
 func _assert_eq(actual: String, expected: String, label: String) -> void:

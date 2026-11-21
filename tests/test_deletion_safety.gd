@@ -150,6 +150,13 @@ func test_nothing_checked_deletes_nothing() -> void:
 func test_root_and_outside_paths_are_refused() -> void:
 	_check(not Ops.is_safe_target("user://"), "user:// refused")
 	_check(not Ops.is_safe_target("user://../escape"), ".. refused")
+	_check(not Ops.is_safe_target("user://."), "user://. (root) refused")
+	_check(not Ops.is_safe_target("user://./"), "user://./ (root) refused")
+	_check(not Ops.is_safe_target("user:///"), "user:/// (root) refused")
+	_check(not Ops.is_safe_target("user://a/./b"), ". segment refused")
+	_check(not Ops.is_safe_target("user://a//b"), "empty segment refused")
+	_check(not Ops.is_safe_target("user://a\\..\\.."), "backslash .. refused")
+	_check(not Ops.is_safe_target("user://saves/"), "trailing slash refused")
 	_check(not Ops.is_safe_target("res://project.godot"), "res:// refused")
 	_check(not Ops.is_safe_target("C:/Windows"), "absolute path refused")
 	_check(Ops.is_safe_target(TEST_DIR + "/x.json"), "path inside user:// accepted")

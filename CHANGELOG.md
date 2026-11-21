@@ -4,6 +4,8 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+- `format_file_size` now reports sizes of 1 GB and up in GB (`"2.00 GB"` instead of `"2048.00 MB"`), e.g. for large shader or asset caches.
+
 ## [2.7.0] (2026-11-19)
 
 - New type filters: **Backups & temp** (`.bak`, `.tmp`, including `<save>.v<N>.bak` pre-migration copies), **Test runner data** (`user://test_runner/` and everything in it, empty folders included), and **Logs** (`.log`, `.jsonl`). Only visible items are deleted, so a filter narrows a delete too: "Test runner data → Delete Selected" removes `user://test_runner` and nothing else.

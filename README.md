@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.13.1** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.13.2** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -261,7 +261,7 @@ Patterns are comma-separated and relative to `user://`:
 
 Rules: `*` and `?` work in the **last segment only** and match names in that one folder (`String.match`); there is no recursive `**`, so `*.tmp` does not reach into subfolders. Patterns that are blank, absolute (`/etc`), drive-letter (`C:/x`), contain `\`, `.`, `..` or empty segments, or put a wildcard in a folder name are ignored and listed in the label. Nothing outside `user://` is ever touched, `user://` itself never, and a symlinked folder is not looked into (a link itself is removed as a link). Because this runs unattended on every Play, keep patterns narrow: the dialog's count is the preview.
 
-A top-level pattern made only of wildcards (`*`, `*/`, `?*`) is refused and listed as ignored: it would empty `user://` on every Play. Narrow it (`*.tmp`, `test_*/`).
+A top-level pattern made only of wildcards and dots (`*`, `*/`, `?*`, `*.*`, `.*`, `*.`) is refused and listed as ignored: it would empty `user://` on every Play. Narrow it (`*.tmp`, `test_*/`, `.cache*`).
 
 ## Running Tests
 

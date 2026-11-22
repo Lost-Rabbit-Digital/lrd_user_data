@@ -192,7 +192,7 @@ func test_clean_on_play_deletes_exactly_the_matches() -> void:
 
 func test_a_top_level_match_everything_pattern_is_refused() -> void:
 	_write("a.tmp")
-	for pattern: String in ["*", "*/", "**", "?*", "*?"]:
+	for pattern: String in ["*", "*/", "**", "?*", "*?", "*.*", ".*", "*.", "?.?", "*.*/"]:
 		_check(Ops.clean_targets(_p([pattern])).is_empty(), "'%s' selects nothing" % pattern)
 		_check(Ops.invalid_patterns(_p([pattern])) == _p([pattern]), "'%s' is reported" % pattern)
-	_check(Ops.invalid_patterns(_p(["*.tmp", "test_*/"])).is_empty(), "globs with a fixed part stay valid")
+	_check(Ops.invalid_patterns(_p(["*.tmp", "test_*/", ".cache*", "*.log"])).is_empty(), "globs with a fixed part stay valid")

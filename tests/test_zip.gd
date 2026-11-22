@@ -19,6 +19,8 @@ func _initialize() -> void:
 		test_paths_outside_user_are_refused,
 		test_nothing_to_zip_writes_nothing,
 		test_the_zip_is_never_added_to_itself,
+		test_the_zip_is_never_added_to_itself_on_a_case_insensitive_filesystem,
+		test_a_failed_zip_leaves_no_archive,
 		test_selected_paths_follow_the_delete_rules,
 		test_default_name_is_safe,
 	]:
@@ -115,6 +117,47 @@ func test_the_zip_is_never_added_to_itself() -> void:
 	var result := Ops.zip_paths(paths, zip)
 	_check(result.error == OK and result.files == 1, "self: only a.txt archived")
 	_check(not _entries(zip).has("test_zip/snapshot.zip"), "self: zip not inside itself")
+
+
+func test_the_zip_is_never_added_to_itself_on_a_case_insensitive_filesystem() -> void:
+	_write("a.txt", "a")
+	_write("snapshot.zip", "stale")
+	var zip := TEST_DIR.path_join("Snapshot.zip")
+	var paths: Array[String] = [TEST_DIR]
+	Ops.case_insensitive_paths = 1
+	var result := Ops.zip_paths(paths, zip)
+	Ops.case_insensitive_paths = -1
+	_check(result.error == OK and result.files == 1, "case: only a.txt archived (got %d)" % result.files)
+	_check(result.skipped.has(TEST_DIR.path_join("snapshot.zip")), "case: the differently cased zip is skipped")
+	_check(not _entries(zip).has("test_zip/snapshot.zip"), "case: no partial copy inside the zip")
+	# Forced off, the two names are different files and both are archived.
+	_rm(TEST_DIR)
+	DirAccess.make_dir_recursive_absolute(TEST_DIR)
+	_write("a.txt", "a")
+	_write("snapshot.zip", "stale")
+	Ops.case_insensitive_paths = 0
+	result = Ops.zip_paths(paths, TEST_DIR.path_join("Snapshot.zip"))
+	Ops.case_insensitive_paths = -1
+	_check(result.files == 2, "case off: distinct names are both archived (got %d)" % result.files)
+
+
+func test_a_failed_zip_leaves_no_archive() -> void:
+	_write("a.txt", "a")
+	_write("b.txt", "b")
+	var zip := OUT_DIR.path_join("fail.zip")
+	var calls := [0]
+	Ops.zip_fault = func(_file: String) -> int:
+		calls[0] += 1
+		return ERR_FILE_CANT_WRITE if calls[0] == 2 else OK
+	var paths: Array[String] = [TEST_DIR]
+	var result := Ops.zip_paths(paths, zip)
+	Ops.zip_fault = Callable()
+	_check(result.error == ERR_FILE_CANT_WRITE, "fail: the error is returned")
+	_check(not FileAccess.file_exists(zip), "fail: no partial archive is left")
+	_check(FileAccess.file_exists(TEST_DIR.path_join("a.txt")) and FileAccess.file_exists(TEST_DIR.path_join("b.txt")), "fail: sources untouched")
+	# A later zip without the fault works.
+	result = Ops.zip_paths(paths, zip)
+	_check(result.error == OK and FileAccess.file_exists(zip), "fail: the next attempt succeeds")
 
 
 func test_selected_paths_follow_the_delete_rules() -> void:

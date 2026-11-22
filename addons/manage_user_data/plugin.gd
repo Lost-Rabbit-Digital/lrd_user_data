@@ -1425,7 +1425,13 @@ func _on_confirmed_delete() -> void:
 	var result := delete_selected_items()
 	if not result.failed.is_empty():
 		push_warning("Manage User Data: %d item(s) could not be deleted." % result.failed.size())
-	_on_refresh_tree()
+	# Keep every other row's check state: the manual Refresh re-checks
+	# everything, which would make the next Delete Selected remove rows the
+	# user unchecked.
+	if tree != null:
+		_rebuild_tree(true)
+		_update_select_all_checkbox()
+		update_warning_label()
 	confirmation_dialog.call_deferred("popup_centered")
 
 

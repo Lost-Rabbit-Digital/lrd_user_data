@@ -23,6 +23,7 @@ func _initialize() -> void:
 		test_a_hostile_archive_writes_nothing_outside_user,
 		test_a_symlinked_folder_is_not_written_through,
 		test_a_missing_archive_is_an_error,
+		test_an_archive_never_overwrites_itself,
 	]:
 		_reset()
 		test.call()
@@ -129,6 +130,15 @@ func test_a_symlinked_folder_is_not_written_through() -> void:
 	Ops.unzip_into_user(zip)
 	_check(not FileAccess.file_exists(_outside.path_join("evil.txt")), "symlink: target untouched")
 	DirAccess.remove_absolute(TEST_DIR.path_join("link"))
+
+
+func test_an_archive_never_overwrites_itself() -> void:
+	var zip := _zip({"test_restore_out/crafted.zip": "boom", "test_restore/ok.txt": "ok"})
+	var size_before := FileAccess.get_file_as_bytes(zip).size()
+	var result := Ops.unzip_into_user(zip)
+	_check(FileAccess.get_file_as_bytes(zip).size() == size_before, "own zip: the archive being read is untouched")
+	_check(result.files == 1 and result.skipped.size() == 1, "own zip: entry skipped, the other restored (%d, %d)" % [result.files, result.skipped.size()])
+	_check(FileAccess.file_exists(TEST_DIR.path_join("ok.txt")), "own zip: the safe entry is restored")
 
 
 func test_a_missing_archive_is_an_error() -> void:

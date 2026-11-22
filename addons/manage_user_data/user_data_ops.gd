@@ -147,6 +147,19 @@ static func set_subtree_checked(item: TreeItem, checked: bool) -> void:
 		child = child.get_next()
 
 
+## Sets the check state of every visible row under [param item] (the item
+## included), leaving rows a filter hides as they were. This is what "Select
+## All" means while a search or type filter is active.
+static func set_visible_checked(item: TreeItem, checked: bool) -> void:
+	if item == null or not item.visible:
+		return
+	item.set_checked(COL_CHECK, checked)
+	var child := item.get_first_child()
+	while child != null:
+		set_visible_checked(child, checked)
+		child = child.get_next()
+
+
 ## Unchecks every row under [param root] (root included), then checks
 ## [param target] and its descendants, so [method plan_deletion] and
 ## [method selected_paths] return just that one path. Ancestors stay unchecked.
@@ -312,9 +325,16 @@ static func clean_targets(patterns: PackedStringArray) -> Array[String]:
 	for path: String in found:
 		sorted.append(path)
 	sorted.sort()
+	# Compare with every kept path, not just the last: "a", "a-b", "a/c" sorts
+	# "a-b" between "a" and "a/c".
 	var minimal: Array[String] = []
 	for path: String in sorted:
-		if minimal.is_empty() or not path.begins_with(minimal[minimal.size() - 1] + "/"):
+		var inside := false
+		for kept: String in minimal:
+			if path.begins_with(kept + "/"):
+				inside = true
+				break
+		if not inside:
 			minimal.append(path)
 	return minimal
 
@@ -670,10 +690,19 @@ static func capture_state(root: TreeItem) -> Dictionary:
 	return out
 
 
+## The key a row is remembered by: its path, or [constant ROOT_PATH] for the
+## dialog's parentless user:// row, which carries no path metadata.
+static func _state_key(item: TreeItem) -> String:
+	var path := _path_of(item)
+	if path == "" and item.get_parent() == null:
+		return ROOT_PATH
+	return path
+
+
 static func _capture(item: TreeItem, out: Dictionary) -> void:
 	if item == null:
 		return
-	var path := _path_of(item)
+	var path := _state_key(item)
 	if path != "":
 		out[path] = {"checked": item.is_checked(COL_CHECK), "collapsed": item.is_collapsed()}
 	var child := item.get_first_child()
@@ -693,7 +722,7 @@ static func _capture(item: TreeItem, out: Dictionary) -> void:
 static func restore_state(root: TreeItem, state: Dictionary, inherited_checked: bool = true) -> void:
 	if root == null:
 		return
-	var path := _path_of(root)
+	var path := _state_key(root)
 	if path != "" and state.has(path):
 		var saved: Dictionary = state[path]
 		root.set_checked(COL_CHECK, bool(saved.get("checked", true)))
@@ -767,6 +796,8 @@ static func _sign(base: String, rel: String, state: Dictionary) -> void:
 const PREVIEW_IMAGE_EXTENSIONS := ["png", "jpg", "jpeg", "webp", "svg"]
 const PREVIEW_JSONL_LINES := 50
 const PREVIEW_HEX_BYTES := 256
+## Images larger than this are not loaded for a preview (it would stall the editor).
+const PREVIEW_IMAGE_MAX_BYTES := 8 * 1024 * 1024
 
 
 ## Read-only look at [param path] for the Preview pane. Reads at most
@@ -809,6 +840,11 @@ static func preview(path: String, max_bytes: int = 65536) -> Dictionary:
 	var ext := path.get_extension().to_lower()
 	if PREVIEW_IMAGE_EXTENSIONS.has(ext):
 		file.close()
+		if length > PREVIEW_IMAGE_MAX_BYTES:
+			out.kind = "text"
+			out.text = "Image too large to preview (%s)." % format_file_size(length)
+			out.truncated = true
+			return out
 		out.kind = "image"
 		return out
 	var window := maxi(max_bytes, 0)
@@ -1098,11 +1134,13 @@ static func unzip_into_user(zip_path: String) -> Dictionary:
 	if err != OK:
 		return {"error": err, "files": 0, "skipped": skipped}
 	var written := 0
+	var own_zip := ProjectSettings.globalize_path(zip_path).simplify_path()
 	for name: String in reader.get_files():
 		if name.ends_with("/"):
 			continue
 		var dest := restore_destination(name)
-		if dest == "":
+		# Never write over the archive being read: it would corrupt the rest.
+		if dest == "" or ProjectSettings.globalize_path(dest).simplify_path() == own_zip:
 			skipped.append(name)
 			continue
 		DirAccess.make_dir_recursive_absolute(dest.get_base_dir())

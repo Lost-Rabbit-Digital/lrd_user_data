@@ -782,7 +782,12 @@ func _confirm_delete_one(path: String) -> void:
 		var result := UserDataOps.delete_paths(typed)
 		if not result.failed.is_empty():
 			push_warning("Manage User Data: could not delete '%s'." % path)
-		_on_refresh_tree()
+		# Keep every other row's check state: re-checking everything here
+		# would let the next Delete Selected remove rows the user unchecked.
+		if tree != null:
+			_rebuild_tree(true)
+			_update_select_all_checkbox()
+			update_warning_label()
 	)
 	delete_one_dialog.canceled.connect(delete_one_dialog.queue_free)
 	delete_one_dialog.confirmed.connect(delete_one_dialog.queue_free)
@@ -802,8 +807,8 @@ func propagate_check_state(item: TreeItem, checked: bool) -> void:
 func _on_select_all_checkbox_toggled(checked: bool) -> void:
 	var root := tree.get_root()
 	if root:
-		root.set_checked(2, checked)
-		propagate_check_state(root, checked)
+		# Only visible rows: rows a search or filter hides keep their state.
+		UserDataOps.set_visible_checked(root, checked)
 		update_warning_label()
 
 
@@ -834,6 +839,8 @@ func _update_select_all_checkbox() -> void:
 
 ## Counts total and checked tree items recursively into [param counts] ([total, checked]).
 func _count_tree_items(item: TreeItem, counts: Array) -> void:
+	if not item.visible:
+		return
 	counts[0] += 1
 	if item.is_checked(2):
 		counts[1] += 1
@@ -868,8 +875,8 @@ func _on_refresh_tree() -> void:
 ## Rebuilds the tree from disk, then sorts and re-applies the search and type
 ## filters (so rows a filter hides stay hidden and are never deleted).
 ## With [param keep_state] (auto-refresh) it also restores each row's check
-## state and collapsed state by path and the selected row; files that appeared
-## since are checked, like on first open. Without it, every row starts checked.
+## state and collapsed state by path and the selected row; a file that appeared
+## since takes its folder's check state (see UserDataOps.restore_state). Without it, every row starts checked.
 func _rebuild_tree(keep_state: bool) -> void:
 	var state := {}
 	var selected_path := ""
@@ -1592,10 +1599,14 @@ func _confirm_restore(btn: Button, zip_path: String) -> void:
 
 ## Shows brief feedback text on a button, then restores the original text.
 func _show_copy_feedback(btn: Button, message: String) -> void:
+	if not is_instance_valid(btn):
+		return
 	var original_text := btn.text
 	btn.text = message
 	btn.disabled = true
 	get_tree().create_timer(1.5).timeout.connect(func() -> void:
+		if not is_instance_valid(btn):
+			return  # The dialog was closed meanwhile.
 		btn.text = original_text
 		btn.disabled = false
 	)

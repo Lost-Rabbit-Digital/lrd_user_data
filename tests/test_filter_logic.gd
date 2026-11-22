@@ -30,6 +30,7 @@ func _initialize() -> void:
 	test_tree_test_data_filter_shows_the_whole_test_runner_folder()
 	test_filtered_delete_removes_only_backups()
 	test_filtered_delete_of_test_data_takes_the_folder_whole()
+	test_select_all_only_touches_visible_rows()
 	if _tree:
 		_tree.free()
 	_print_summary()
@@ -227,6 +228,20 @@ func test_filtered_delete_of_test_data_takes_the_folder_whole() -> void:
 	Ops.filter_tree(root, "", _f([Ops.FILTER_TEST_DATA]))
 	var plan: Array[String] = Ops.plan_deletion(root)
 	_assert_eq_str(", ".join(plan), "user://test_runner", "test data delete plan")
+
+
+func test_select_all_only_touches_visible_rows() -> void:
+	var root := _build()
+	Ops.set_subtree_checked(root, false)
+	Ops.filter_tree(root, "", _f([Ops.FILTER_BACKUPS]))
+	Ops.set_visible_checked(root, true)
+	Ops.filter_tree(root, "", _f([]))
+	var plan: Array[String] = Ops.plan_deletion(root)
+	for path: String in plan:
+		_assert_true(Ops.is_backup_or_temp(path.get_file()), "select all under a filter checked only visible: %s" % path)
+	_assert_true(not plan.is_empty(), "the visible rows were checked")
+	var hidden_file := Ops.find_item_by_path(root, "user://saves/slot_0/p.json")
+	_assert_true(not hidden_file.is_checked(Ops.COL_CHECK), "a row the filter hid stayed unchecked")
 
 
 # -- Assertions ----------------------------------------------------------------

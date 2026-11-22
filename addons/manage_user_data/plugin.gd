@@ -12,6 +12,10 @@ var filter_menu_button: MenuButton
 var clear_filter_btn: Button
 var warning_label: Label
 var select_all_checkbox: CheckBox
+var preview_header: Label
+var preview_text: TextEdit
+var preview_image: TextureRect
+var preview_copy_btn: Button
 var active_type_filters: Array[int] = []
 
 
@@ -56,7 +60,7 @@ func show_confirmation_dialog() -> void:
 	confirmation_dialog = ConfirmationDialog.new()
 	confirmation_dialog.title = "Manage User Directory Contents" + (" v" + plugin_version if plugin_version else "")
 	confirmation_dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_SCREEN_WITH_MOUSE_FOCUS
-	confirmation_dialog.size = Vector2i(780, 580)
+	confirmation_dialog.size = Vector2i(1040, 600)
 	confirmation_dialog.min_size = Vector2i(540, 420)
 	confirmation_dialog.wrap_controls = true
 	confirmation_dialog.get_cancel_button().text = "Close"
@@ -284,7 +288,15 @@ func show_confirmation_dialog() -> void:
 
 	tree.item_edited.connect(_on_tree_item_edited)
 	tree.item_mouse_selected.connect(_on_tree_item_mouse_selected)
-	vbox.add_child(tree)
+	tree.item_selected.connect(_on_tree_item_selected)
+	tree.size_flags_stretch_ratio = 1.6
+
+	var split := HSplitContainer.new()
+	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split.add_child(tree)
+	split.add_child(_build_preview_panel())
+	vbox.add_child(split)
 
 	vbox.add_child(HSeparator.new())
 
@@ -378,6 +390,103 @@ Path: %s" % [file_name, full_path])
 		file_name = dir.get_next()
 
 	dir.list_dir_end()
+
+
+## Builds the read-only Preview pane shown beside the tree.
+func _build_preview_panel() -> Control:
+	var panel := VBoxContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.size_flags_stretch_ratio = 1.0
+	panel.custom_minimum_size = Vector2(240, 0)
+
+	var head := HBoxContainer.new()
+	preview_header = Label.new()
+	preview_header.text = "Preview"
+	preview_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_header.clip_text = true
+	preview_header.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	head.add_child(preview_header)
+	preview_copy_btn = Button.new()
+	preview_copy_btn.text = "Copy"
+	preview_copy_btn.tooltip_text = "Copy the previewed text"
+	preview_copy_btn.disabled = true
+	preview_copy_btn.pressed.connect(_on_preview_copy_pressed)
+	head.add_child(preview_copy_btn)
+	panel.add_child(head)
+
+	preview_text = TextEdit.new()
+	preview_text.editable = false
+	preview_text.context_menu_enabled = false
+	preview_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_text.placeholder_text = "Select a file to preview it"
+	var mono: Font = EditorInterface.get_base_control().get_theme_font("source", "EditorFonts")
+	if mono != null:
+		preview_text.add_theme_font_override("font", mono)
+	panel.add_child(preview_text)
+
+	preview_image = TextureRect.new()
+	preview_image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	preview_image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	preview_image.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	preview_image.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_image.visible = false
+	panel.add_child(preview_image)
+	return panel
+
+
+## Shows the selected row in the Preview pane. Read-only: it never touches the
+## checkboxes or the files. See [code]UserDataOps.preview()[/code].
+func _on_tree_item_selected() -> void:
+	var item := tree.get_selected()
+	if item == null or preview_text == null:
+		return
+	var meta: Variant = item.get_metadata(1)
+	if not meta is String or meta == "":
+		_show_preview("user://", {"kind": "folder", "text": "", "truncated": false, "bytes": 0, "error": ""})
+		return
+	var path: String = meta
+	var result := UserDataOps.preview(path)
+	_show_preview(path, result)
+
+
+func _show_preview(path: String, result: Dictionary) -> void:
+	var kind: String = result.kind
+	var header := "%s  (%s, %s)" % [path.get_file() if path != "user://" else path, kind, format_file_size(int(result.bytes))]
+	if result.truncated:
+		header += " [truncated]"
+	if result.error != "":
+		header += " - " + String(result.error)
+	preview_header.text = header
+	preview_header.tooltip_text = header
+	preview_image.visible = false
+	preview_image.texture = null
+	preview_text.visible = true
+	var text: String = result.text
+	if kind == "image":
+		var image := Image.load_from_file(path)
+		if image != null and not image.is_empty():
+			preview_image.texture = ImageTexture.create_from_image(image)
+			preview_image.visible = true
+			preview_text.visible = false
+			text = ""
+			preview_header.text = "%s  (image %dx%d, %s)" % [
+				path.get_file(), image.get_width(), image.get_height(), format_file_size(int(result.bytes))
+			]
+		else:
+			text = "(cannot decode this image)"
+	elif kind == "missing":
+		text = "(file no longer exists)"
+	elif kind == "refused":
+		text = "(not previewed)"
+	preview_text.text = text
+	preview_copy_btn.disabled = text == "" or preview_image.visible
+
+
+func _on_preview_copy_pressed() -> void:
+	DisplayServer.clipboard_set(preview_text.text)
+	_show_copy_feedback(preview_copy_btn, "Copied")
 
 
 ## Handles checkbox edits and propagates the new state to all child items.
@@ -819,6 +928,7 @@ func _on_help_pressed() -> void:
 		["File Sizes", "Inline file sizes on every entry; the status bar totals the size of your current selection."],
 		["Open in OS", "\"Open Folder\" launches user:// in your operating system's native file manager."],
 		["Copy Logs", "Copy the contents of every log file in user://logs/ to your clipboard in one click."],
+		["Preview", "Click a file to read it beside the tree: JSON pretty-printed (.jsonl shows its first rows), text, a hex dump for binary files, a thumbnail for images, a size summary for folders. Read-only, capped at 64 KB, and it never changes your selection."],
 		["Zip Selected", "Save the checked, visible items as one .zip, paths kept relative to user://: attach it to a bug report, or keep a snapshot before deleting."],
 		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
@@ -1006,6 +1116,10 @@ func _on_dialog_closed() -> void:
 		confirmation_dialog.queue_free()
 		confirmation_dialog = null
 		select_all_checkbox = null
+		preview_header = null
+		preview_text = null
+		preview_image = null
+		preview_copy_btn = null
 		filter_menu_button = null
 		clear_filter_btn = null
 		active_type_filters.clear()

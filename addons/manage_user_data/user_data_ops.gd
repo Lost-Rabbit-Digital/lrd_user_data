@@ -368,6 +368,196 @@ static func filter_tree(item: TreeItem, search_term: String, filter_types: Array
 	return shown
 
 
+# -- Preview -------------------------------------------------------------------
+
+const PREVIEW_IMAGE_EXTENSIONS := ["png", "jpg", "jpeg", "webp", "svg"]
+const PREVIEW_JSONL_LINES := 50
+const PREVIEW_HEX_BYTES := 256
+
+
+## Read-only look at [param path] for the Preview pane. Reads at most
+## [param max_bytes] of a file and never writes anything.
+##
+## Returns {"kind", "text", "truncated", "bytes", "error"}. [code]kind[/code] is
+## "json" (parsed and pretty-printed; .jsonl shows its first lines), "text",
+## "binary" (NUL bytes or invalid UTF-8; [code]text[/code] is a hex dump of the
+## first 256 bytes), "image" (the UI loads it; [code]text[/code] is empty),
+## "folder" (a file count and size summary), "missing", or "refused" (outside
+## user://, or a symbolic link). Invalid JSON shows the raw text with
+## [code]error[/code] "invalid JSON: <message> at line N". [code]bytes[/code] is
+## the size on disk.
+static func preview(path: String, max_bytes: int = 65536) -> Dictionary:
+	var out := {"kind": "missing", "text": "", "truncated": false, "bytes": 0, "error": ""}
+	if not is_safe_target(path):
+		out.kind = "refused"
+		out.error = "not inside user://"
+		return out
+	if _is_link(path):
+		out.kind = "refused"
+		out.error = "symbolic link (not followed)"
+		return out
+	if DirAccess.dir_exists_absolute(path):
+		var counts := _count_files(path)
+		var bytes := calculate_folder_size(path)
+		out.kind = "folder"
+		out.bytes = bytes
+		out.text = "%d file(s), %s" % [counts, format_file_size(bytes)]
+		return out
+	if not FileAccess.file_exists(path):
+		return out
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		out.kind = "refused"
+		out.error = "cannot open (error %d)" % FileAccess.get_open_error()
+		return out
+	var length := file.get_length()
+	out.bytes = length
+	var ext := path.get_extension().to_lower()
+	if PREVIEW_IMAGE_EXTENSIONS.has(ext):
+		file.close()
+		out.kind = "image"
+		return out
+	var window := maxi(max_bytes, 0)
+	var buf := file.get_buffer(mini(length, window))
+	file.close()
+	out.truncated = length > buf.size()
+	if out.truncated:
+		# A cut inside a multi-byte character is not invalid UTF-8.
+		buf = _trim_partial_utf8(buf)
+	if buf.has(0) or not _is_valid_utf8(buf):
+		out.kind = "binary"
+		out.text = hex_dump(buf, PREVIEW_HEX_BYTES)
+		return out
+	var text := buf.get_string_from_utf8()
+	out.kind = "text"
+	out.text = text
+	if ext == "json":
+		var json := JSON.new()
+		if json.parse(text) == OK:
+			out.kind = "json"
+			out.text = JSON.stringify(json.data, "  ")
+		elif not out.truncated:
+			out.error = "invalid JSON: %s at line %d" % [json.get_error_message(), json.get_error_line()]
+	elif ext == "jsonl":
+		_preview_jsonl(text, out)
+	return out
+
+
+## First [constant PREVIEW_JSONL_LINES] rows of a JSON Lines file, each
+## pretty-printed. A truncated read drops its last (possibly cut) line.
+static func _preview_jsonl(text: String, out: Dictionary) -> void:
+	var lines := text.split("\n")
+	if out.truncated:
+		lines.remove_at(lines.size() - 1)
+	var parts: Array[String] = []
+	var all_valid := true
+	var shown := 0
+	for i in lines.size():
+		var line := lines[i].strip_edges()
+		if line == "":
+			continue
+		if shown >= PREVIEW_JSONL_LINES:
+			out.truncated = true
+			break
+		shown += 1
+		var json := JSON.new()
+		if json.parse(line) == OK:
+			parts.append(JSON.stringify(json.data, "  "))
+		else:
+			all_valid = false
+			parts.append(line)
+			if out.error == "":
+				out.error = "invalid JSON: %s at line %d" % [json.get_error_message(), i + 1]
+	if shown == 0:
+		return
+	out.text = "\n\n".join(parts)
+	out.kind = "json" if all_valid else "text"
+
+
+## "00000000  48 65 6c 6c ...  |Hello...|" lines of 16 bytes for the first
+## [param limit] bytes of [param buf].
+static func hex_dump(buf: PackedByteArray, limit: int = 256) -> String:
+	var lines: Array[String] = []
+	var count := mini(buf.size(), limit)
+	for offset in range(0, count, 16):
+		var hex := ""
+		var ascii := ""
+		for i in 16:
+			if offset + i < count:
+				var b := buf[offset + i]
+				hex += "%02x " % b
+				ascii += char(b) if b >= 32 and b < 127 else "."
+			else:
+				hex += "   "
+		lines.append("%08x  %s |%s|" % [offset, hex, ascii])
+	return "\n".join(lines)
+
+
+static func _count_files(path: String) -> int:
+	var total := 0
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return 0
+	dir.include_hidden = true
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name != "." and file_name != ".." and not dir.is_link(file_name):
+			if dir.current_is_dir():
+				total += _count_files(path.path_join(file_name))
+			else:
+				total += 1
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return total
+
+
+## Drops a trailing incomplete UTF-8 sequence (at most 3 bytes).
+static func _trim_partial_utf8(buf: PackedByteArray) -> PackedByteArray:
+	var n := buf.size()
+	for back in range(1, mini(4, n + 1)):
+		var b := buf[n - back]
+		if b & 0xC0 == 0x80:
+			continue  # continuation byte, keep looking for its lead byte
+		var need := 1
+		if b >= 0xF0:
+			need = 4
+		elif b >= 0xE0:
+			need = 3
+		elif b >= 0xC0:
+			need = 2
+		if need > back:
+			return buf.slice(0, n - back)
+		break
+	return buf
+
+
+static func _is_valid_utf8(buf: PackedByteArray) -> bool:
+	var i := 0
+	var n := buf.size()
+	while i < n:
+		var b := buf[i]
+		var extra := 0
+		if b < 0x80:
+			i += 1
+			continue
+		elif b >= 0xC2 and b <= 0xDF:
+			extra = 1
+		elif b >= 0xE0 and b <= 0xEF:
+			extra = 2
+		elif b >= 0xF0 and b <= 0xF4:
+			extra = 3
+		else:
+			return false
+		if i + extra > n - 1:
+			return false
+		for k in range(1, extra + 1):
+			if buf[i + k] & 0xC0 != 0x80:
+				return false
+		i += extra + 1
+	return true
+
+
 # -- Zip -----------------------------------------------------------------------
 
 

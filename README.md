@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.9.0** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.10.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -65,6 +65,7 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Refresh the list | Click the **⟳** icon |
 | Open in file manager | Click **Open Folder** |
 | Copy engine logs | Click **Copy Logs** (de-duplicates automatically) |
+| Inspect a file | Click a row: the **Preview** pane shows it (JSON pretty-printed, hex dump for binary, thumbnail for images). **Copy** copies the text; nothing is changed |
 | Zip for a bug report | Click **Zip Selected…**: the checked, visible items as one `.zip`, paths relative to `user://` |
 | Load someone's zip | Click **Restore Zip…**: shows how many files it writes and overwrites, then extracts into `user://` |
 
@@ -87,6 +88,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **File Sizes** — Inline sizes on every entry; status bar totals the selection
 - **Open in OS** — Launch `user://` in your native file manager
 - **Copy Logs** — One-click copy of de-duplicated `godot.log` to clipboard
+- **Preview** — Click a file to read it beside the tree: pretty-printed JSON (first rows of `.jsonl`), text, hex dump for binary, image thumbnail, folder summary. Read-only, 64 KB cap
 - **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip) or go through a symlink are skipped
 - **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
 - **Refresh** — Rescan `user://` without reopening the plugin
@@ -189,6 +191,7 @@ Returns an appropriate editor theme icon for the file type.
 | Function | Does |
 |---|---|
 | `plan_deletion(root)` / `selected_paths(root)` | The minimal list of paths a delete would remove (and Zip archives): checked **and** visible only |
+| `preview(path, max_bytes)` | Read-only look at a file for the Preview pane: `{kind, text, truncated, bytes, error}`; json / text / binary (hex dump) / image / folder / missing / refused; reads at most `max_bytes` |
 | `zip_listing(zip)` / `unzip_into_user(zip)` / `restore_destination(entry)` | Preview and extract a zip into `user://`; hostile entry names and symlinked folders refused |
 | `zip_paths(paths, zip_path)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped; `{error, files, skipped}` |
 | `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
@@ -252,6 +255,7 @@ godot --headless --path . --script tests/test_filter_logic.gd
 godot --headless --path . --script tests/test_file_operations.gd
 godot --headless --path . --script tests/test_deletion_safety.gd
 godot --headless --path . --script tests/test_zip.gd
+godot --headless --path . --script tests/test_preview.gd
 godot --headless --path . --script tests/test_restore_zip.gd
 ```
 
@@ -265,6 +269,7 @@ godot --headless --path . --script tests/test_restore_zip.gd
 | `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown extensions |
 | `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), and what a filtered delete plans to remove |
 | `test_deletion_safety.gd` | The plugin's real deletion code against real files: unchecked children survive, filtered-out items survive, whole-folder deletes, refusal outside `user://`, dotfiles, status-bar stats |
+| `test_preview.gd` | Preview: JSON pretty-print, invalid JSON error line, cut at `max_bytes` (not inside a character), hex dump format, refused outside `user://`, folder summary, missing file, first `.jsonl` rows |
 | `test_restore_zip.gd` | Restore Zip: round trip with Zip Selected, overwrite preview, hostile names (`..`, absolute, drive letter, backslash), nothing written outside `user://`, symlinked folders refused |
 | `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
 | `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |

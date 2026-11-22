@@ -15,6 +15,7 @@ extends SceneTree
 ##   godot --headless --script tests/test_clean_on_play.gd
 ##   godot --headless --script tests/test_restore_zip.gd
 ##   godot --headless --script tests/test_preview.gd
+##   godot --headless --script tests/test_sort_refresh.gd
 
 
 func _init() -> void:

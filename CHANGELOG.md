@@ -4,6 +4,14 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.13.1] (2026-11-22)
+
+- **Auto-refresh no longer re-checks the `user://` row.** The root row has no path, so its check state was never captured: after unchecking everything, a file that appeared at the top level came back checked and Delete would have removed it. The root is now remembered like any other row.
+- **Select All only touches visible rows**, as its tooltip says. Rows hidden by a search or type filter used to be checked or unchecked too, so clearing the filter could reveal rows you had unchecked now checked. The Select All box also reflects only visible rows.
+- **Restore Zip never writes over the archive it is reading** (an entry that maps to the zip's own path inside `user://` is skipped and reported).
+- `clean_targets()` returns a truly minimal set: `a`, `a-b`, `a/c` used to return `a/c` as well as `a` (it sorts after `a-b`), over-counting matches and deletions.
+- A button's temporary feedback text ("Copied", "Zipped…") no longer touches the button after the dialog was closed.
+
 ## [2.13.0] (2026-11-22)
 
 - **Right-click menu** on tree rows: Copy path, Copy absolute path, Show in file manager, **Only this** (unchecks everything, then checks just that row and what is inside it, so Delete or Zip acts on one thing), Check / Uncheck all in this folder, and **Delete this…**. Delete this names the path with its file count and size, asks for confirmation, and deletes through `delete_paths`; it is disabled for the `user://` root and anything that fails `is_safe_target`. The root row offers only the copy and show entries.

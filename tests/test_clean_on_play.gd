@@ -24,6 +24,7 @@ func _initialize() -> void:
 		test_symlinked_folder_is_not_globbed_into,
 		test_minimal_set_drops_paths_inside_a_match,
 		test_duplicates_collapse,
+		test_minimal_set_holds_when_a_sibling_name_sorts_between,
 		test_missing_paths_match_nothing,
 		test_clean_on_play_deletes_exactly_the_matches,
 		test_a_top_level_match_everything_pattern_is_refused,
@@ -157,6 +158,14 @@ func test_minimal_set_drops_paths_inside_a_match() -> void:
 	_write("runner/b.log")
 	var got := Ops.clean_targets(_p([REL + "/runner/a.tmp", REL + "/runner/", REL + "/runner/*.log"]))
 	_check(got == [TEST_DIR + "/runner"], "a folder and files inside it give just the folder")
+
+
+func test_minimal_set_holds_when_a_sibling_name_sorts_between() -> void:
+	# "a-b" sorts between "a" and "a/c" as a string, which hid "a/c" inside "a".
+	_write("a/c")
+	_write("a-b")
+	var got := Ops.clean_targets(_p([REL + "/a", REL + "/a-b", REL + "/a/c"]))
+	_check(got == [TEST_DIR + "/a", TEST_DIR + "/a-b"], "nothing returned is inside another returned path (got %s)" % str(got))
 
 
 func test_duplicates_collapse() -> void:

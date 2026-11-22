@@ -802,8 +802,8 @@ func propagate_check_state(item: TreeItem, checked: bool) -> void:
 func _on_select_all_checkbox_toggled(checked: bool) -> void:
 	var root := tree.get_root()
 	if root:
-		root.set_checked(2, checked)
-		propagate_check_state(root, checked)
+		# Only visible rows: rows a search or filter hides keep their state.
+		UserDataOps.set_visible_checked(root, checked)
 		update_warning_label()
 
 
@@ -834,6 +834,8 @@ func _update_select_all_checkbox() -> void:
 
 ## Counts total and checked tree items recursively into [param counts] ([total, checked]).
 func _count_tree_items(item: TreeItem, counts: Array) -> void:
+	if not item.visible:
+		return
 	counts[0] += 1
 	if item.is_checked(2):
 		counts[1] += 1
@@ -1592,10 +1594,14 @@ func _confirm_restore(btn: Button, zip_path: String) -> void:
 
 ## Shows brief feedback text on a button, then restores the original text.
 func _show_copy_feedback(btn: Button, message: String) -> void:
+	if not is_instance_valid(btn):
+		return
 	var original_text := btn.text
 	btn.text = message
 	btn.disabled = true
 	get_tree().create_timer(1.5).timeout.connect(func() -> void:
+		if not is_instance_valid(btn):
+			return  # The dialog was closed meanwhile.
 		btn.text = original_text
 		btn.disabled = false
 	)

@@ -26,6 +26,7 @@ func _initialize() -> void:
 	test_capture_and_restore_keep_unchecked_and_collapsed()
 	test_restore_leaves_new_items_checked_and_ignores_gone_ones()
 	test_a_new_file_in_an_unchecked_folder_stays_unchecked()
+	test_a_new_top_level_file_stays_unchecked_when_the_root_was_unchecked()
 	_rm(TEST_DIR)
 	_rm(OUTSIDE_DIR)
 	if _tree:
@@ -287,3 +288,32 @@ func test_a_new_file_in_an_unchecked_folder_stays_unchecked() -> void:
 	_assert_true(not _by_path(fresh, "a_dir/appeared.txt").is_checked(Ops.COL_CHECK), "a file that appeared inside an unchecked folder is unchecked")
 	_assert_true(not Ops.plan_deletion(fresh).has(TEST_DIR.path_join("a_dir/appeared.txt")), "so Delete does not plan to remove it")
 	DirAccess.remove_absolute(TEST_DIR.path_join("a_dir/appeared.txt"))
+
+
+## The dialog's user:// row has no path metadata, so its check state used to be
+## lost on rebuild: a file that appeared at the top level came back checked.
+func _build_like_the_dialog() -> TreeItem:
+	if _tree:
+		_tree.free()
+	_tree = Tree.new()
+	_tree.set_columns(3)
+	var root := _tree.create_item()
+	root.set_text(0, "user://")
+	root.set_text(1, "Directory")
+	root.set_cell_mode(Ops.COL_CHECK, TreeItem.CELL_MODE_CHECK)
+	root.set_checked(Ops.COL_CHECK, true)
+	_populate(root, TEST_DIR)
+	return root
+
+
+func test_a_new_top_level_file_stays_unchecked_when_the_root_was_unchecked() -> void:
+	var root := _build_like_the_dialog()
+	Ops.set_subtree_checked(root, false)
+	var state := Ops.capture_state(root)
+	_write("appeared_top.txt", 3)
+	var fresh := _build_like_the_dialog()
+	Ops.restore_state(fresh, state)
+	_assert_true(not fresh.is_checked(Ops.COL_CHECK), "the user:// row keeps its unchecked state")
+	_assert_true(not _by_path(fresh, "appeared_top.txt").is_checked(Ops.COL_CHECK), "a top-level file that appeared is unchecked")
+	_assert_true(Ops.plan_deletion(fresh).is_empty(), "so Delete plans to remove nothing")
+	DirAccess.remove_absolute(TEST_DIR.path_join("appeared_top.txt"))

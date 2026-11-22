@@ -4,6 +4,13 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.13.2] (2026-11-22)
+
+- **Zip Selected no longer adds a partial copy of the zip being written on Windows and macOS.** The output path was compared with the sources case-sensitively, so zipping to `Snapshot.zip` while `snapshot.zip` was selected archived the file as it was being rewritten. Both Zip Selected and Restore Zip now compare case-insensitively on those systems (`UserDataOps.case_insensitive_paths`: -1 detects the OS, 0 / 1 force it for tests).
+- **A failed Zip Selected leaves no archive.** When writing fails part-way the packer is closed and the partial file is removed (`UserDataOps.zip_fault` is a test seam that injects the failure).
+- **Clean on Play refuses `*.*`, `.*`, `*.` and `?.?`** at the top level: they match every dotted name in `user://`, like `*`. Patterns with a letter (`*.tmp`, `.cache*`) stay valid.
+- **After Delete Selected the tree keeps every row's check state**, as the single-item Delete does. It used to re-check everything, so a second Delete Selected removed rows you had unchecked.
+
 ## [2.13.1] (2026-11-22)
 
 - **Auto-refresh no longer re-checks the `user://` row.** The root row has no path, so its check state was never captured: after unchecking everything, a file that appeared at the top level came back checked and Delete would have removed it. The root is now remembered like any other row.

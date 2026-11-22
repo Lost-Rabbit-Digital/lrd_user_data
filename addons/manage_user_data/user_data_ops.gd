@@ -245,7 +245,9 @@ static func _parse_clean_pattern(pattern: String) -> Dictionary:
 	var name: String = parts[parts.size() - 1]
 	# A top-level name made only of wildcards ("*", "*?") would empty user://
 	# on every Play: refuse it rather than trust a stray keystroke.
-	if parts.size() == 1 and name.replace("*", "").replace("?", "") == "":
+	# Dots count as nothing too: "*.*", ".*", "*." and "?.?" match every dotted
+	# name (settings.cfg, saves.json ...), which is as good as everything.
+	if parts.size() == 1 and name.replace("*", "").replace("?", "").replace(".", "") == "":
 		return bad
 	var dir_parts := PackedStringArray()
 	for i: int in parts.size() - 1:
@@ -990,20 +992,33 @@ static func _is_valid_utf8(buf: PackedByteArray) -> bool:
 
 # -- Zip -----------------------------------------------------------------------
 
+## Whether paths compare case-insensitively: -1 detects it from the OS (Windows
+## and macOS filesystems are case-insensitive by default), 0 / 1 force it off /
+## on (a test seam, so the rule can be exercised on Linux).
+static var case_insensitive_paths: int = -1
+
+## Test seam: when valid, [method zip_paths] calls it with each file's path
+## before adding it, and treats a returned Error other than OK as a write failure.
+static var zip_fault: Callable = Callable()
+
 
 ## Archives [param paths] (as [method selected_paths] returns them) into a zip
 ## at [param zip_path], for a bug report or a snapshot before deleting. Entries
 ## are named relative to user:// (`saves/slot_0/progress.json`), folders are
 ## added with everything inside them, hidden files included, and symbolic links
 ## are skipped, never followed. Paths outside user:// are refused, and the zip
-## itself is never added to itself.
+## itself is never added to itself (compared case-insensitively on Windows and
+## macOS, see [member case_insensitive_paths]).
 ##
-## Returns {"error": Error, "files": int, "skipped": Array[String]}. With no
+## A failed zip leaves no archive: when writing fails part-way the packer is
+## closed and the partial file at [param zip_path] is removed. ([code]open[/code]
+## truncates any file already there, so an earlier archive at that path is gone
+## either way.) Returns {"error": Error, "files": int, "skipped": Array[String]}. With no
 ## file to add, nothing is written and error is ERR_DOES_NOT_EXIST.
 static func zip_paths(paths: Array[String], zip_path: String) -> Dictionary:
 	var entries: Array[String] = []
 	var skipped: Array[String] = []
-	var own_zip := ProjectSettings.globalize_path(zip_path).simplify_path()
+	var own_zip := _comparable_path(zip_path)
 	for path: String in paths:
 		if not is_safe_target(path):
 			skipped.append(path)
@@ -1017,7 +1032,7 @@ static func zip_paths(paths: Array[String], zip_path: String) -> Dictionary:
 			skipped.append(path)
 	var files: Array[String] = []
 	for entry: String in entries:
-		if ProjectSettings.globalize_path(entry).simplify_path() == own_zip:
+		if _comparable_path(entry) == own_zip:
 			skipped.append(entry)
 		elif not files.has(entry):
 			files.append(entry)
@@ -1036,16 +1051,31 @@ static func zip_paths(paths: Array[String], zip_path: String) -> Dictionary:
 		if bytes.is_empty() and FileAccess.get_open_error() != OK:
 			skipped.append(file)
 			continue
-		err = zip.start_file(file.trim_prefix(ROOT_PATH))
+		err = OK
+		if zip_fault.is_valid():
+			err = zip_fault.call(file) as Error
 		if err == OK:
-			err = zip.write_file(bytes)
-			zip.close_file()
+			err = zip.start_file(file.trim_prefix(ROOT_PATH))
+			if err == OK:
+				err = zip.write_file(bytes)
+				zip.close_file()
 		if err != OK:
 			zip.close()
+			DirAccess.remove_absolute(zip_path)
 			return {"error": err, "files": added, "skipped": skipped}
 		added += 1
 	zip.close()
 	return {"error": OK, "files": added, "skipped": skipped}
+
+
+## [param path] as an absolute, simplified string, lower-cased when the
+## filesystem is case-insensitive, for comparing two paths.
+static func _comparable_path(path: String) -> String:
+	var out := ProjectSettings.globalize_path(path).simplify_path()
+	var insensitive := case_insensitive_paths == 1
+	if case_insensitive_paths < 0:
+		insensitive = OS.get_name() in ["Windows", "macOS"]
+	return out.to_lower() if insensitive else out
 
 
 ## A default archive name: `<project>_user_data_<YYYY-MM-DD_HH-MM-SS>.zip`.
@@ -1134,13 +1164,13 @@ static func unzip_into_user(zip_path: String) -> Dictionary:
 	if err != OK:
 		return {"error": err, "files": 0, "skipped": skipped}
 	var written := 0
-	var own_zip := ProjectSettings.globalize_path(zip_path).simplify_path()
+	var own_zip := _comparable_path(zip_path)
 	for name: String in reader.get_files():
 		if name.ends_with("/"):
 			continue
 		var dest := restore_destination(name)
 		# Never write over the archive being read: it would corrupt the rest.
-		if dest == "" or ProjectSettings.globalize_path(dest).simplify_path() == own_zip:
+		if dest == "" or _comparable_path(dest) == own_zip:
 			skipped.append(name)
 			continue
 		DirAccess.make_dir_recursive_absolute(dest.get_base_dir())

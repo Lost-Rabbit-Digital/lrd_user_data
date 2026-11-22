@@ -24,6 +24,7 @@ func _initialize() -> void:
 		test_a_symlinked_folder_is_not_written_through,
 		test_a_missing_archive_is_an_error,
 		test_an_archive_never_overwrites_itself,
+		test_an_archive_never_overwrites_itself_on_a_case_insensitive_filesystem,
 	]:
 		_reset()
 		test.call()
@@ -139,6 +140,16 @@ func test_an_archive_never_overwrites_itself() -> void:
 	_check(FileAccess.get_file_as_bytes(zip).size() == size_before, "own zip: the archive being read is untouched")
 	_check(result.files == 1 and result.skipped.size() == 1, "own zip: entry skipped, the other restored (%d, %d)" % [result.files, result.skipped.size()])
 	_check(FileAccess.file_exists(TEST_DIR.path_join("ok.txt")), "own zip: the safe entry is restored")
+
+
+func test_an_archive_never_overwrites_itself_on_a_case_insensitive_filesystem() -> void:
+	Ops.case_insensitive_paths = 1
+	var zip := _zip({"test_restore_out/CRAFTED.ZIP": "boom", "test_restore/ok.txt": "ok"})
+	var size_before := FileAccess.get_file_as_bytes(zip).size()
+	var result := Ops.unzip_into_user(zip)
+	Ops.case_insensitive_paths = -1
+	_check(FileAccess.get_file_as_bytes(zip).size() == size_before, "own zip (case): the archive is untouched")
+	_check(result.files == 1 and result.skipped.size() == 1, "own zip (case): the differently cased entry is skipped (%d, %d)" % [result.files, result.skipped.size()])
 
 
 func test_a_missing_archive_is_an_error() -> void:

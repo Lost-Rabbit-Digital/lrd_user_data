@@ -4,6 +4,11 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.13.0] (2026-11-22)
+
+- **Right-click menu** on tree rows: Copy path, Copy absolute path, Show in file manager, **Only this** (unchecks everything, then checks just that row and what is inside it, so Delete or Zip acts on one thing), Check / Uncheck all in this folder, and **Delete this…**. Delete this names the path with its file count and size, asks for confirmation, and deletes through `delete_paths`; it is disabled for the `user://` root and anything that fails `is_safe_target`. The root row offers only the copy and show entries.
+- `UserDataOps.context_actions()`, `only_this()`, `set_subtree_checked()` and `absolute_path()`. Tested headless in `tests/test_context_menu.gd`.
+
 ## [2.12.0] (2026-11-22)
 
 - **Sort**: a toolbar menu orders the tree by Name, Size (largest first) or Modified (newest first). Folders always stay first, ties fall back to the name (case-insensitive). A folder's size is its total size; its modified time is the newest file inside it (or its own time when empty). Only the order changes: check state, visibility, collapsed state and metadata are untouched, so sorting never changes what Delete removes. Remembered per project in the editor's project metadata.

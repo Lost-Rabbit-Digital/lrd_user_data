@@ -104,6 +104,60 @@ static func is_safe_target(path: String) -> bool:
 	return true
 
 
+## Context-menu action ids (see [method context_actions]).
+const ACTION_COPY_PATH := "copy_path"
+const ACTION_COPY_ABSOLUTE := "copy_absolute"
+const ACTION_SHOW := "show_in_file_manager"
+const ACTION_ONLY_THIS := "only_this"
+const ACTION_CHECK_FOLDER := "check_folder"
+const ACTION_UNCHECK_FOLDER := "uncheck_folder"
+const ACTION_DELETE := "delete_this"
+
+
+## The context-menu actions enabled for a row, in menu order. The user:// root
+## row gets only the copy and show actions; "Delete this" is offered only for a
+## path that passes [method is_safe_target]. Folder rows add the check/uncheck
+## actions. The UI maps these ids to menu items and does nothing else.
+static func context_actions(path: String, is_folder: bool) -> PackedStringArray:
+	var out := PackedStringArray([ACTION_COPY_PATH, ACTION_COPY_ABSOLUTE, ACTION_SHOW])
+	if path == ROOT_PATH:
+		return out
+	out.append(ACTION_ONLY_THIS)
+	if is_folder:
+		out.append(ACTION_CHECK_FOLDER)
+		out.append(ACTION_UNCHECK_FOLDER)
+	if is_safe_target(path):
+		out.append(ACTION_DELETE)
+	return out
+
+
+## The OS path for a [code]user://[/code] path (what a file manager needs).
+static func absolute_path(path: String) -> String:
+	return ProjectSettings.globalize_path(path)
+
+
+## Sets the check state of [param item] and every descendant.
+static func set_subtree_checked(item: TreeItem, checked: bool) -> void:
+	if item == null:
+		return
+	item.set_checked(COL_CHECK, checked)
+	var child := item.get_first_child()
+	while child != null:
+		set_subtree_checked(child, checked)
+		child = child.get_next()
+
+
+## Unchecks every row under [param root] (root included), then checks
+## [param target] and its descendants, so [method plan_deletion] and
+## [method selected_paths] return just that one path. Ancestors stay unchecked.
+static func only_this(root: TreeItem, target: TreeItem) -> void:
+	if root == null:
+		return
+	set_subtree_checked(root, false)
+	if target != null:
+		set_subtree_checked(target, true)
+
+
 ## {files, folders, bytes} for a plan, counting the files inside whole folders.
 static func describe(paths: Array[String]) -> Dictionary:
 	var files := 0

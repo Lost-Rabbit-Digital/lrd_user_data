@@ -24,6 +24,9 @@ var refresh_timer: Timer
 var _last_signature := 0
 var _sort_cache := {}
 var _refreshing := false
+var context_menu: PopupMenu
+var _context_item_path := ""
+var delete_one_dialog: ConfirmationDialog
 
 const META_SECTION := "manage_user_data"
 const DEFAULT_CLEAN_PATTERNS := "test_runner/"
@@ -449,6 +452,7 @@ func show_confirmation_dialog() -> void:
 	tree.item_edited.connect(_on_tree_item_edited)
 	tree.item_mouse_selected.connect(_on_tree_item_mouse_selected)
 	tree.item_selected.connect(_on_tree_item_selected)
+	tree.allow_rmb_select = true
 	tree.size_flags_stretch_ratio = 1.6
 
 	var split := HSplitContainer.new()
@@ -669,10 +673,13 @@ func _on_tree_item_edited() -> void:
 
 ## Toggles expand/collapse when a folder item is clicked in the name or type column.
 func _on_tree_item_mouse_selected(mouse_position: Vector2, mouse_button_index: int) -> void:
-	if mouse_button_index != MOUSE_BUTTON_LEFT:
-		return
 	var item := tree.get_item_at_position(mouse_position)
 	if item == null:
+		return
+	if mouse_button_index == MOUSE_BUTTON_RIGHT:
+		_show_context_menu(item, mouse_position)
+		return
+	if mouse_button_index != MOUSE_BUTTON_LEFT:
 		return
 	var item_type_text := item.get_text(1)
 	var is_folder: bool = item_type_text.begins_with("Folder") or item_type_text == "Directory"
@@ -684,6 +691,103 @@ func _on_tree_item_mouse_selected(mouse_position: Vector2, mouse_button_index: i
 	if col == 2:
 		return
 	item.set_collapsed(not item.is_collapsed())
+
+
+## Path of a tree row; the root row (no metadata) is user://.
+func _row_path(item: TreeItem) -> String:
+	var meta: Variant = item.get_metadata(1)
+	return meta if meta is String and meta != "" else UserDataOps.ROOT_PATH
+
+
+const _CONTEXT_LABELS := {
+	UserDataOps.ACTION_COPY_PATH: "Copy path",
+	UserDataOps.ACTION_COPY_ABSOLUTE: "Copy absolute path",
+	UserDataOps.ACTION_SHOW: "Show in file manager",
+	UserDataOps.ACTION_ONLY_THIS: "Only this",
+	UserDataOps.ACTION_CHECK_FOLDER: "Check all in this folder",
+	UserDataOps.ACTION_UNCHECK_FOLDER: "Uncheck all in this folder",
+	UserDataOps.ACTION_DELETE: "Delete this…",
+}
+
+
+## Right-click menu for a row. Which entries are enabled comes from
+## UserDataOps.context_actions; this only maps ids to menu items.
+func _show_context_menu(item: TreeItem, mouse_position: Vector2) -> void:
+	if is_instance_valid(context_menu):
+		context_menu.queue_free()
+	_context_item_path = _row_path(item)
+	var enabled := UserDataOps.context_actions(_context_item_path, UserDataOps.is_folder_item(item))
+	context_menu = PopupMenu.new()
+	var is_folder := UserDataOps.is_folder_item(item)
+	for action: String in _CONTEXT_LABELS:
+		if not is_folder and (action == UserDataOps.ACTION_CHECK_FOLDER or action == UserDataOps.ACTION_UNCHECK_FOLDER):
+			continue
+		if action == UserDataOps.ACTION_ONLY_THIS or action == UserDataOps.ACTION_DELETE:
+			context_menu.add_separator()
+		context_menu.add_item(_CONTEXT_LABELS[action])
+		var last := context_menu.item_count - 1
+		context_menu.set_item_metadata(last, action)
+		context_menu.set_item_disabled(last, not enabled.has(action))
+	context_menu.id_pressed.connect(_on_context_id_pressed.bind(item))
+	context_menu.popup_hide.connect(context_menu.queue_free)
+	confirmation_dialog.add_child(context_menu)
+	context_menu.position = Vector2i(tree.get_screen_position() + mouse_position)
+	context_menu.popup()
+
+
+func _on_context_id_pressed(id: int, item: TreeItem) -> void:
+	if not is_instance_valid(context_menu) or not is_instance_valid(item):
+		return
+	var index := context_menu.get_item_index(id)
+	var action: String = context_menu.get_item_metadata(index)
+	var path := _row_path(item)
+	# Re-check against the ops rules at click time, not just when the menu opened.
+	if not UserDataOps.context_actions(path, UserDataOps.is_folder_item(item)).has(action):
+		return
+	match action:
+		UserDataOps.ACTION_COPY_PATH:
+			DisplayServer.clipboard_set(path)
+		UserDataOps.ACTION_COPY_ABSOLUTE:
+			DisplayServer.clipboard_set(UserDataOps.absolute_path(path))
+		UserDataOps.ACTION_SHOW:
+			OS.shell_show_in_file_manager(UserDataOps.absolute_path(path))
+		UserDataOps.ACTION_ONLY_THIS:
+			UserDataOps.only_this(tree.get_root(), item)
+			update_warning_label()
+		UserDataOps.ACTION_CHECK_FOLDER:
+			UserDataOps.set_subtree_checked(item, true)
+			update_warning_label()
+		UserDataOps.ACTION_UNCHECK_FOLDER:
+			UserDataOps.set_subtree_checked(item, false)
+			update_warning_label()
+		UserDataOps.ACTION_DELETE:
+			_confirm_delete_one(path)
+
+
+## Names the path and what it holds, then deletes only that item through
+## UserDataOps.delete_paths after the user confirms.
+func _confirm_delete_one(path: String) -> void:
+	if not UserDataOps.is_safe_target(path):
+		return
+	var info := UserDataOps.describe([path])
+	var detail := "%d file(s), %d folder(s), %s" % [info.files, info.folders, format_file_size(int(info.bytes))]
+	if is_instance_valid(delete_one_dialog):
+		delete_one_dialog.queue_free()
+	delete_one_dialog = ConfirmationDialog.new()
+	delete_one_dialog.title = "Delete this item?"
+	delete_one_dialog.ok_button_text = "Delete"
+	delete_one_dialog.dialog_text = "Permanently delete %s ?\n\n%s\n\nThis cannot be undone." % [path, detail]
+	delete_one_dialog.confirmed.connect(func() -> void:
+		var typed: Array[String] = [path]
+		var result := UserDataOps.delete_paths(typed)
+		if not result.failed.is_empty():
+			push_warning("Manage User Data: could not delete '%s'." % path)
+		_on_refresh_tree()
+	)
+	delete_one_dialog.canceled.connect(delete_one_dialog.queue_free)
+	delete_one_dialog.confirmed.connect(delete_one_dialog.queue_free)
+	confirmation_dialog.add_child(delete_one_dialog)
+	delete_one_dialog.popup_centered()
 
 
 ## Recursively applies [param checked] to all children of [param item].
@@ -1139,6 +1243,7 @@ func _on_help_pressed() -> void:
 		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
 		["Clean on Play", "Optionally delete chosen user:// items (paths, folders with a trailing /, or * globs such as *.tmp) every time you press Play, so stale test data does not leak between runs. Off by default; the row below the tree shows how many items match now."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
+		["Right-click menu", "Right-click a row: Copy path, Copy absolute path, Show in file manager, Only this (checks just that row and what is inside it, handy before Delete or Zip), Check/Uncheck all in this folder, and Delete this… (asks first). The user:// root offers only the copy and show entries."],
 		["Sort", "Order the tree by name, size (largest first) or modified time (newest first). Folders always stay first and only the order changes, never what is checked or deleted. Remembered per project."],
 		["Auto-refresh", "While the dialog is open, rescans user:// every second and updates the tree when something changed, keeping your checks, expanded folders, search, filters, sort and selected row. New files start checked, as on first open. Off by default; remembered per project."],
 		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
@@ -1325,6 +1430,8 @@ func _on_dialog_closed() -> void:
 		confirmation_dialog.queue_free()
 		confirmation_dialog = null
 		select_all_checkbox = null
+		context_menu = null
+		delete_one_dialog = null
 		preview_header = null
 		preview_text = null
 		preview_image = null

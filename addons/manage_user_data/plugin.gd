@@ -202,6 +202,16 @@ func show_confirmation_dialog() -> void:
 	copy_logs_btn.pressed.connect(_on_copy_logs_pressed.bind(copy_logs_btn))
 	toolbar_hbox.add_child(copy_logs_btn)
 
+	var zip_btn := Button.new()
+	zip_btn.text = "Zip Selected…"
+	zip_btn.icon = base.get_theme_icon("Save", "EditorIcons")
+	for state: String in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color"]:
+		zip_btn.add_theme_color_override(state, Color.hex(0xE0A55CFF))
+	zip_btn.tooltip_text = "Save the checked, visible items as a .zip (for a bug report, or a snapshot before deleting)"
+	zip_btn.flat = false
+	zip_btn.pressed.connect(_on_zip_pressed.bind(zip_btn))
+	toolbar_hbox.add_child(zip_btn)
+
 	var toolbar_spacer := Control.new()
 	toolbar_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar_hbox.add_child(toolbar_spacer)
@@ -799,6 +809,7 @@ func _on_help_pressed() -> void:
 		["File Sizes", "Inline file sizes on every entry; the status bar totals the size of your current selection."],
 		["Open in OS", "\"Open Folder\" launches user:// in your operating system's native file manager."],
 		["Copy Logs", "Copy the contents of every log file in user://logs/ to your clipboard in one click."],
+		["Zip Selected", "Save the checked, visible items as one .zip, paths kept relative to user://: attach it to a bug report, or keep a snapshot before deleting."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
 		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
 	]
@@ -1060,6 +1071,35 @@ func _on_copy_logs_pressed(btn: Button) -> void:
 
 	DisplayServer.clipboard_set("\n".join(unique_lines))
 	_show_copy_feedback(btn, "Copied!")
+
+
+## Asks where to save, then zips what the selection covers (the same set
+## Delete would remove; see UserDataOps.zip_paths).
+func _on_zip_pressed(btn: Button) -> void:
+	var paths := UserDataOps.selected_paths(tree.get_root())
+	if paths.is_empty():
+		_show_copy_feedback(btn, "Nothing selected")
+		return
+	var picker := EditorFileDialog.new()
+	picker.file_mode = EditorFileDialog.FILE_MODE_SAVE_FILE
+	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
+	picker.add_filter("*.zip", "Zip archive")
+	picker.title = "Save user data as .zip"
+	picker.current_dir = OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
+	picker.current_file = UserDataOps.default_zip_name(str(ProjectSettings.get_setting("application/config/name", "")))
+	picker.file_selected.connect(func(zip_path: String) -> void:
+		var result := UserDataOps.zip_paths(paths, zip_path)
+		if result.error == OK:
+			_show_copy_feedback(btn, "Zipped %d file(s)" % result.files)
+			OS.shell_show_in_file_manager(zip_path)
+		else:
+			push_warning("Manage User Data: could not write '%s' (error %d)" % [zip_path, result.error])
+			_show_copy_feedback(btn, "Zip failed")
+		picker.queue_free()
+	)
+	picker.canceled.connect(picker.queue_free)
+	EditorInterface.get_base_control().add_child(picker)
+	picker.popup_file_dialog()
 
 
 ## Shows brief feedback text on a button, then restores the original text.

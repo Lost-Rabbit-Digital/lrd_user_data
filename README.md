@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.7.0** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.8.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -65,6 +65,7 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Refresh the list | Click the **⟳** icon |
 | Open in file manager | Click **Open Folder** |
 | Copy engine logs | Click **Copy Logs** (de-duplicates automatically) |
+| Zip for a bug report | Click **Zip Selected…**: the checked, visible items as one `.zip`, paths relative to `user://` |
 
 <img src="screenshot_2.png" width="512" alt="File tree screenshot">
 
@@ -85,6 +86,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **File Sizes** — Inline sizes on every entry; status bar totals the selection
 - **Open in OS** — Launch `user://` in your native file manager
 - **Copy Logs** — One-click copy of de-duplicated `godot.log` to clipboard
+- **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
 - **Refresh** — Rescan `user://` without reopening the plugin
 - **Version Check** — Warns on Godot versions below 4.3
 - **Error Resilience** — Gracefully handles unreadable files, locked directories, and permission errors
@@ -184,7 +186,8 @@ Returns an appropriate editor theme icon for the file type.
 
 | Function | Does |
 |---|---|
-| `plan_deletion(root)` | The minimal list of paths a delete would remove: checked **and** visible only |
+| `plan_deletion(root)` / `selected_paths(root)` | The minimal list of paths a delete would remove (and Zip archives): checked **and** visible only |
+| `zip_paths(paths, zip_path)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped; `{error, files, skipped}` |
 | `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
 | `describe(paths)` | `{files, folders, bytes}` for the status bar |
 | `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |
@@ -220,6 +223,7 @@ Common clean-ups:
 
 - **Reset test pollution:** Test runner data → leave all checked → **Delete Selected**. Removes `user://test_runner` whole and nothing else.
 - **Test a corrupt-save fallback:** search the save's name, uncheck the `.bak`, delete the save, run the game: it should load the backup.
+- **Send a repro to a teammate:** filter or search to the save, **Zip Selected…**, attach the zip. They unzip it into their own `user://` folder (**Open Folder**).
 - **Start a fresh playthrough but keep settings:** uncheck `settings.cfg` (or filter to `.json`) before deleting.
 
 ## Running Tests
@@ -244,6 +248,7 @@ godot --headless --path . --script tests/test_file_type_label.gd
 godot --headless --path . --script tests/test_filter_logic.gd
 godot --headless --path . --script tests/test_file_operations.gd
 godot --headless --path . --script tests/test_deletion_safety.gd
+godot --headless --path . --script tests/test_zip.gd
 ```
 
 `run_all.sh` also parse-checks every addon script and fails a suite that exits without printing its summary. CI (`.github/workflows/tests.yml`) runs it on Godot 4.7.
@@ -256,6 +261,7 @@ godot --headless --path . --script tests/test_deletion_safety.gd
 | `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown extensions |
 | `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), and what a filtered delete plans to remove |
 | `test_deletion_safety.gd` | The plugin's real deletion code against real files: unchecked children survive, filtered-out items survive, whole-folder deletes, refusal outside `user://`, dotfiles, status-bar stats |
+| `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
 | `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
 
 ### CI Integration

@@ -68,6 +68,12 @@ static func _plan(item: TreeItem, out: Array[String]) -> void:
 		child = child.get_next()
 
 
+## What the current selection covers (checked and visible, folders whole only
+## when fully selected). The same set Delete removes and Zip archives.
+static func selected_paths(root: TreeItem) -> Array[String]:
+	return plan_deletion(root)
+
+
 ## True when [param item] and all of its descendants are checked and visible.
 static func is_fully_selected(item: TreeItem) -> bool:
 	if not item.visible or not item.is_checked(COL_CHECK):
@@ -360,3 +366,90 @@ static func filter_tree(item: TreeItem, search_term: String, filter_types: Array
 		shown = self_matches or any_child_visible
 	item.visible = shown
 	return shown
+
+
+# -- Zip -----------------------------------------------------------------------
+
+
+## Archives [param paths] (as [method selected_paths] returns them) into a zip
+## at [param zip_path], for a bug report or a snapshot before deleting. Entries
+## are named relative to user:// (`saves/slot_0/progress.json`), folders are
+## added with everything inside them, hidden files included, and symbolic links
+## are skipped, never followed. Paths outside user:// are refused, and the zip
+## itself is never added to itself.
+##
+## Returns {"error": Error, "files": int, "skipped": Array[String]}. With no
+## file to add, nothing is written and error is ERR_DOES_NOT_EXIST.
+static func zip_paths(paths: Array[String], zip_path: String) -> Dictionary:
+	var entries: Array[String] = []
+	var skipped: Array[String] = []
+	var own_zip := ProjectSettings.globalize_path(zip_path).simplify_path()
+	for path: String in paths:
+		if not is_safe_target(path):
+			skipped.append(path)
+		elif _is_link(path):
+			skipped.append(path)
+		elif DirAccess.dir_exists_absolute(path):
+			_collect_files(path, entries)
+		elif FileAccess.file_exists(path):
+			entries.append(path)
+		else:
+			skipped.append(path)
+	var files: Array[String] = []
+	for entry: String in entries:
+		if ProjectSettings.globalize_path(entry).simplify_path() == own_zip:
+			skipped.append(entry)
+		elif not files.has(entry):
+			files.append(entry)
+	if files.is_empty():
+		return {"error": ERR_DOES_NOT_EXIST, "files": 0, "skipped": skipped}
+	var dir := zip_path.get_base_dir()
+	if dir != "" and not DirAccess.dir_exists_absolute(dir):
+		DirAccess.make_dir_recursive_absolute(dir)
+	var zip := ZIPPacker.new()
+	var err := zip.open(zip_path)
+	if err != OK:
+		return {"error": err, "files": 0, "skipped": skipped}
+	var added := 0
+	for file: String in files:
+		var bytes := FileAccess.get_file_as_bytes(file)
+		if bytes.is_empty() and FileAccess.get_open_error() != OK:
+			skipped.append(file)
+			continue
+		err = zip.start_file(file.trim_prefix(ROOT_PATH))
+		if err == OK:
+			err = zip.write_file(bytes)
+			zip.close_file()
+		if err != OK:
+			zip.close()
+			return {"error": err, "files": added, "skipped": skipped}
+		added += 1
+	zip.close()
+	return {"error": OK, "files": added, "skipped": skipped}
+
+
+## A default archive name: `<project>_user_data_<YYYY-MM-DD_HH-MM-SS>.zip`.
+static func default_zip_name(project_name: String) -> String:
+	var safe := project_name.validate_filename().replace(" ", "_")
+	if safe == "":
+		safe = "project"
+	var stamp := Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
+	return "%s_user_data_%s.zip" % [safe, stamp]
+
+
+static func _collect_files(path: String, out: Array[String]) -> void:
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+	dir.include_hidden = true
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name != "." and file_name != ".." and not dir.is_link(file_name):
+			var full_path := path.path_join(file_name)
+			if dir.current_is_dir():
+				_collect_files(full_path, out)
+			else:
+				out.append(full_path)
+		file_name = dir.get_next()
+	dir.list_dir_end()

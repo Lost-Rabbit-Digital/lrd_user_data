@@ -176,6 +176,10 @@ static func _parse_clean_pattern(pattern: String) -> Dictionary:
 		if i < parts.size() - 1 and (part.contains("*") or part.contains("?")):
 			return bad
 	var name: String = parts[parts.size() - 1]
+	# A top-level name made only of wildcards ("*", "*?") would empty user://
+	# on every Play: refuse it rather than trust a stray keystroke.
+	if parts.size() == 1 and name.replace("*", "").replace("?", "") == "":
+		return bad
 	var dir_parts := PackedStringArray()
 	for i: int in parts.size() - 1:
 		dir_parts.append(parts[i])

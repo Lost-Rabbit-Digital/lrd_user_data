@@ -252,6 +252,8 @@ Patterns are comma-separated and relative to `user://`:
 
 Rules: `*` and `?` work in the **last segment only** and match names in that one folder (`String.match`); there is no recursive `**`, so `*.tmp` does not reach into subfolders. Patterns that are blank, absolute (`/etc`), drive-letter (`C:/x`), contain `\`, `.`, `..` or empty segments, or put a wildcard in a folder name are ignored and listed in the label. Nothing outside `user://` is ever touched, `user://` itself never, and a symlinked folder is not looked into (a link itself is removed as a link). Because this runs unattended on every Play, keep patterns narrow: the dialog's count is the preview.
 
+A top-level pattern made only of wildcards (`*`, `*/`, `?*`) is refused and listed as ignored: it would empty `user://` on every Play. Narrow it (`*.tmp`, `test_*/`).
+
 ## Running Tests
 
 Every suite calls the plugin's real code in `user_data_ops.gd`; nothing is re-implemented in the tests.

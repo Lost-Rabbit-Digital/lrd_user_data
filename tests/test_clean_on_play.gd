@@ -26,6 +26,7 @@ func _initialize() -> void:
 		test_duplicates_collapse,
 		test_missing_paths_match_nothing,
 		test_clean_on_play_deletes_exactly_the_matches,
+		test_a_top_level_match_everything_pattern_is_refused,
 	]:
 		_reset()
 		test.call()
@@ -166,7 +167,7 @@ func test_duplicates_collapse() -> void:
 
 func test_missing_paths_match_nothing() -> void:
 	_check(Ops.clean_targets(_p([REL + "/nope", REL + "/nope/*.tmp", REL + "/nope/"])).is_empty(), "paths that do not exist match nothing")
-	_check(Ops.clean_targets(_p(["*"])).size() >= 1 and not Ops.clean_targets(_p(["*"])).has("user://"), "a bare * never selects user:// itself")
+	_check(not Ops.clean_targets(_p([REL + "/*"])).has("user://"), "a folder glob never selects user:// itself")
 
 
 func test_clean_on_play_deletes_exactly_the_matches() -> void:
@@ -178,3 +179,11 @@ func test_clean_on_play_deletes_exactly_the_matches() -> void:
 	_check(result.deleted == 2 and result.failed.is_empty(), "two items deleted, none failed")
 	_check(not DirAccess.dir_exists_absolute(TEST_DIR + "/gone") and not FileAccess.file_exists(TEST_DIR + "/saves/x.bak"), "the matches are gone")
 	_check(FileAccess.file_exists(TEST_DIR + "/saves/keep.json") and FileAccess.file_exists(TEST_DIR + "/keep/b.txt"), "everything else survives")
+
+
+func test_a_top_level_match_everything_pattern_is_refused() -> void:
+	_write("a.tmp")
+	for pattern: String in ["*", "*/", "**", "?*", "*?"]:
+		_check(Ops.clean_targets(_p([pattern])).is_empty(), "'%s' selects nothing" % pattern)
+		_check(Ops.invalid_patterns(_p([pattern])) == _p([pattern]), "'%s' is reported" % pattern)
+	_check(Ops.invalid_patterns(_p(["*.tmp", "test_*/"])).is_empty(), "globs with a fixed part stay valid")

@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.12.0** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.13.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -64,6 +64,7 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Filter by type | Use the **All Types** dropdown: Files, Folders, `.json`, `.cache`, Backups & temp (`.bak`, `.tmp`), Test runner data (`user://test_runner/`), Logs (`.log`, `.jsonl`) |
 | Clear filters | Click **×** next to the dropdown |
 | Refresh the list | Click the **⟳** icon |
+| Act on one row | Right-click it: copy its path, show it in the file manager, **Only this** (checks just that row, then Delete or Zip), check/uncheck a folder, or **Delete this…** (asks first) |
 | Sort the tree | **Sort** menu: Name, Size (largest first), Modified (newest first). Folders stay first; checks and what Delete removes never change |
 | Follow `user://` live | Tick **Auto-refresh**: rescans every second while the dialog is open and updates only when something changed, keeping your checks, folders, search, filters, sort and selection. New files start checked |
 | Open in file manager | Click **Open Folder** |
@@ -96,6 +97,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip) or go through a symlink are skipped
 - **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
 - **Clean on Play** — Optionally delete chosen `user://` items (paths, folders, `*` globs) automatically every time you press Play, so stale test data and caches don't leak between runs. Off by default
+- **Right-click menu** — Copy path, Copy absolute path, Show in file manager, Only this (check just that row), Check/Uncheck all in a folder, and Delete this… (with confirmation)
 - **Sort** — Order the tree by name, size or modified time; folders first, remembered per project
 - **Auto-refresh** — Optionally rescan `user://` every second while the dialog is open, keeping your checks, expanded folders, filters, sort and selection (off by default; a new file takes its folder's check state, so nothing appears checked inside a folder you unchecked)
 - **Refresh** — Rescan `user://` without reopening the plugin
@@ -287,6 +289,8 @@ godot --headless --path . --script tests/test_zip.gd
 godot --headless --path . --script tests/test_clean_on_play.gd
 godot --headless --path . --script tests/test_preview.gd
 godot --headless --path . --script tests/test_restore_zip.gd
+godot --headless --path . --script tests/test_sort_refresh.gd
+godot --headless --path . --script tests/test_context_menu.gd
 ```
 
 `run_all.sh` also parse-checks every addon script and fails a suite that exits without printing its summary. CI (`.github/workflows/tests.yml`) runs it on Godot 4.7.
@@ -304,6 +308,7 @@ godot --headless --path . --script tests/test_restore_zip.gd
 | `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
 | `test_clean_on_play.gd` | Clean on Play: exact paths, trailing-slash folders, globs in a subfolder, no recursion, invalid patterns ignored and reported, nothing outside `user://`, symlinked folders not entered, minimal and de-duplicated results, exactly the matches deleted |
 | `test_sort_refresh.gd` | Sort by name/size/modified (folders first, ties by name, recursive), sort leaves checks/visibility/metadata alone, listing signature on add/resize/remove and symlinked folders, capture/restore of checks and collapsed folders |
+| `test_context_menu.gd` | Right-click menu: enabled actions for root/file/folder/unsafe rows, Only this and Check/Uncheck folder on a real `Tree`, absolute path, deleting one item removes only that item |
 | `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
 
 ### CI Integration

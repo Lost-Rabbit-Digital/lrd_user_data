@@ -29,7 +29,7 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 ## [2.12.0] (2026-11-22)
 
 - **Sort**: a toolbar menu orders the tree by Name, Size (largest first) or Modified (newest first). Folders always stay first, ties fall back to the name (case-insensitive). A folder's size is its total size; its modified time is the newest file inside it (or its own time when empty). Only the order changes: check state, visibility, collapsed state and metadata are untouched, so sorting never changes what Delete removes. Remembered per project in the editor's project metadata.
-- **Auto-refresh**: an off-by-default checkbox (remembered per project). While the dialog is open, a 1 second timer compares a cheap listing signature and rebuilds the tree only when `user://` changed, keeping checked/unchecked rows and expanded/collapsed folders (by path), the search text, type filters, sort and the selected row. Files that appear are checked by default, exactly like on first open.
+- **Auto-refresh**: an off-by-default checkbox (remembered per project). While the dialog is open, a 1 second timer compares a cheap listing signature and rebuilds the tree only when `user://` changed, keeping checked/unchecked rows and expanded/collapsed folders (by path), the search text, type filters, sort and the selected row. Files that appear are checked by default, exactly like on first open (changed in this entry's last bullet: they take their folder's state).
 - Manual Refresh and Auto-refresh now re-apply the search and type filters after rebuilding, so rows a filter hides stay hidden and are not deleted.
 - `UserDataOps.sort_children()`, `listing_signature()` (hash of relative paths, sizes and modified times; hidden files included, symlinked folders never entered, capped at 20000 entries), `capture_state()`, `restore_state()` and `find_item_by_path()`. Tested headless in `tests/test_sort_refresh.gd`.
 - After an auto-refresh, a file that appeared since takes the check state of its folder: inside a folder you unchecked it stays unchecked, so Delete can't remove something you never chose.
@@ -39,7 +39,6 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 - **Clean on Play**: optionally deletes chosen `user://` items every time you press Play, so stale test data, caches or a save don't leak between runs. A checkbox and a comma-separated pattern field (default `test_runner/`) in the dialog, with a live count of what matches; off by default, stored per project in the editor's project metadata. Implemented with `EditorPlugin._build()`, which always returns true, so it never blocks a run.
 - Patterns are relative to `user://`: an exact path, a folder with a trailing `/`, or a `*` / `?` glob in the last segment (`*.tmp`, `saves/*.bak`). No recursive `**`. Invalid patterns (absolute, drive letters, backslashes, `.`/`..`, wildcard folder names) are ignored and reported.
 - `UserDataOps.clean_targets()`, `invalid_patterns()` and `clean_on_play()`: results pass `is_safe_target`, are de-duplicated and minimal, never glob into symlinked folders, and are deleted through `delete_paths`. Tested headless in `tests/test_clean_on_play.gd`.
-
 - A top-level pattern made only of wildcards (`*`, `*/`, `?*`) is refused and reported: it would empty `user://` on every Play.
 
 ## [2.10.0] (2026-11-22)
@@ -67,6 +66,6 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 - Tests now call the plugin's real code. `test_format_file_size`, `test_file_type_label` and `test_filter_logic` used to test private copies of the functions, and `test_file_operations` tested Godot's own save/load APIs; they would have passed with the plugin broken. `test_filter_logic` now filters real `Tree`s and checks what a filtered delete plans to remove.
 - README: the save-format tutorial ("Working with Save Files", "Handling Edge Cases") is replaced by a section on the files save libraries and test runners leave behind, pointing to `lrd_save` for writing saves. Repo links point at `lrd_user_data`; the CI snippet matches the real workflow. New `AGENTS.md` (and `CLAUDE.md`) for coding agents, and this changelog.
 
-## [2.6.0]
+## [2.6.0] (2026-11-07)
 
 - Deletion honours unchecked and filtered-out items (only checked and visible items are deleted; a partly selected folder is kept), refuses paths outside `user://`, removes symlinks without following them. Tests run headless on Godot 4.7.

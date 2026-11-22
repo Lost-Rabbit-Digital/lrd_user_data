@@ -381,7 +381,7 @@ func show_confirmation_dialog() -> void:
 
 	auto_refresh_check = CheckBox.new()
 	auto_refresh_check.text = "Auto-refresh"
-	auto_refresh_check.tooltip_text = "While this dialog is open, rescan user:// every second and update the tree when something changed. Keeps your checks, folders, search, filters, sort and selection; new files start checked"
+	auto_refresh_check.tooltip_text = "While this dialog is open, rescan user:// every second and update the tree when something changed. Keeps your checks, folders, search, filters, sort and selection; a new file takes its folder's check state"
 	auto_refresh_check.button_pressed = _auto_refresh_enabled()
 	auto_refresh_check.toggled.connect(_on_auto_refresh_toggled)
 	toolbar_hbox.add_child(auto_refresh_check)
@@ -1241,19 +1241,18 @@ func _on_help_pressed() -> void:
 		["File Tree", "Full visual tree of user:// with per-item checkboxes for fine-grained selection."],
 		["Real-time Search", "Instantly filters the tree as you type — matching parent folders expand automatically."],
 		["Type Filters", "Narrow the view (and what Delete removes) to files, folders, .json, .cache, save backups and temp files (.bak, .tmp), test-runner data (user://test_runner/), or logs (.log, .jsonl)."],
-		["Bulk Selection", "\"Select All\" selects or deselects every visible item in one click."],
+		["Bulk Selection", "\"Select All\" selects or deselects every visible item in one click; rows hidden by a search or filter keep their state."],
 		["File Sizes", "Inline file sizes on every entry; the status bar totals the size of your current selection."],
 		["Open in OS", "\"Open Folder\" launches user:// in your operating system's native file manager."],
-		["Copy Logs", "Copy the contents of every log file in user://logs/ to your clipboard in one click."],
-		["Preview", "Click a file to read it beside the tree: JSON pretty-printed (.jsonl shows its first rows), text, a hex dump for binary files, a thumbnail for images, a size summary for folders. Read-only, capped at 64 KB, and it never changes your selection."],
+		["Copy Logs", "Copy user://logs/godot.log to your clipboard in one click, with repeated lines dropped (nothing is copied if it is over 50 MB)."],
+		["Preview", "Click a file to read it beside the tree: JSON pretty-printed (.jsonl shows its first rows), text, a hex dump for binary files, a thumbnail for images up to 8 MB, a size summary for folders. Read-only, capped at 64 KB, and it never changes your selection."],
 		["Zip Selected", "Save the checked, visible items as one .zip, paths kept relative to user://: attach it to a bug report, or keep a snapshot before deleting."],
-		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
+		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// (or on the zip itself) are skipped."],
 		["Clean on Play", "Optionally delete chosen user:// items (paths, folders with a trailing /, or * globs such as *.tmp) every time you press Play, so stale test data does not leak between runs. Off by default; the row below the tree shows how many items match now."],
-		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
 		["Right-click menu", "Right-click a row: Copy path, Copy absolute path, Show in file manager, Only this (checks just that row and what is inside it, handy before Delete or Zip), Check/Uncheck all in this folder, and Delete this… (asks first). The user:// root offers only the copy and show entries."],
 		["Sort", "Order the tree by name, size (largest first) or modified time (newest first). Folders always stay first and only the order changes, never what is checked or deleted. Remembered per project."],
-		["Auto-refresh", "While the dialog is open, rescans user:// every second and updates the tree when something changed, keeping your checks, expanded folders, search, filters, sort and selected row. New files start checked, as on first open. Off by default; remembered per project."],
-		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
+		["Auto-refresh", "While the dialog is open, rescans user:// every second and updates the tree when something changed, keeping your checks, expanded folders, search, filters, sort and selected row. A new file takes its folder's check state, so nothing appears checked inside a folder you unchecked. Off by default; remembered per project."],
+		["Refresh", "Rescans user:// at any time without reopening the plugin window. Every row is checked again (as on first open); search, filters and sort are re-applied. After a delete, your other rows keep their check state."],
 	]
 
 	var features_grid := VBoxContainer.new()
@@ -1390,13 +1389,13 @@ func _on_help_pressed() -> void:
 	github_btn.text = "GitHub Repo"
 	github_btn.icon = base.get_theme_icon("ExternalLink", "EditorIcons")
 	github_btn.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	github_btn.tooltip_text = "https://github.com/Lost-Rabbit-Digital/manage_user_data_plugin"
+	github_btn.tooltip_text = "https://github.com/Lost-Rabbit-Digital/lrd_user_data"
 	github_btn.add_theme_stylebox_override("normal", _make_outline_style.call(0.0))
 	github_btn.add_theme_stylebox_override("hover", _make_outline_style.call(0.12))
 	github_btn.add_theme_stylebox_override("pressed", _make_outline_style.call(0.22))
 	github_btn.add_theme_stylebox_override("focus", _make_outline_style.call(0.0))
 	github_btn.pressed.connect(func() -> void:
-		OS.shell_open("https://github.com/Lost-Rabbit-Digital/manage_user_data_plugin")
+		OS.shell_open("https://github.com/Lost-Rabbit-Digital/lrd_user_data")
 	)
 	links_hbox.add_child(github_btn)
 

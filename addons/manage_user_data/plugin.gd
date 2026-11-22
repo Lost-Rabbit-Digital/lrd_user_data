@@ -18,6 +18,12 @@ var preview_image: TextureRect
 var preview_copy_btn: Button
 var active_type_filters: Array[int] = []
 var clean_matches_label: Label
+var sort_option: OptionButton
+var auto_refresh_check: CheckBox
+var refresh_timer: Timer
+var _last_signature := 0
+var _sort_cache := {}
+var _refreshing := false
 
 const META_SECTION := "manage_user_data"
 const DEFAULT_CLEAN_PATTERNS := "test_runner/"
@@ -83,6 +89,46 @@ func _split_patterns(text: String) -> PackedStringArray:
 		if part.strip_edges() != "":
 			out.append(part.strip_edges())
 	return out
+
+
+func _sort_key() -> int:
+	var settings := EditorInterface.get_editor_settings()
+	var key := int(settings.get_project_metadata(META_SECTION, "sort", UserDataOps.SORT_NAME))
+	return key if UserDataOps.SORT_LABELS.has(key) else UserDataOps.SORT_NAME
+
+
+func _auto_refresh_enabled() -> bool:
+	return bool(EditorInterface.get_editor_settings().get_project_metadata(META_SECTION, "auto_refresh", false))
+
+
+func _on_sort_selected(index: int) -> void:
+	var key := sort_option.get_item_id(index)
+	EditorInterface.get_editor_settings().set_project_metadata(META_SECTION, "sort", key)
+	_sort_cache.clear()
+	if tree != null and tree.get_root() != null:
+		UserDataOps.sort_children(tree.get_root(), key, _sort_cache)
+
+
+func _on_auto_refresh_toggled(pressed: bool) -> void:
+	EditorInterface.get_editor_settings().set_project_metadata(META_SECTION, "auto_refresh", pressed)
+	if refresh_timer == null:
+		return
+	if pressed:
+		_last_signature = UserDataOps.listing_signature()
+		refresh_timer.start()
+	else:
+		refresh_timer.stop()
+
+
+## Timer tick (1 s, only while Auto-refresh is on and the dialog is open).
+## Rebuilds the tree, keeping the user's state, only when user:// changed.
+func _on_auto_refresh_tick() -> void:
+	if tree == null or confirmation_dialog == null or not confirmation_dialog.visible or _refreshing:
+		return
+	var signature := UserDataOps.listing_signature()
+	if signature == _last_signature:
+		return
+	_rebuild_tree(true)
 
 
 func _build_clean_row() -> Control:
@@ -321,6 +367,22 @@ func show_confirmation_dialog() -> void:
 	restore_btn.pressed.connect(_on_restore_pressed.bind(restore_btn))
 	toolbar_hbox.add_child(restore_btn)
 
+	sort_option = OptionButton.new()
+	sort_option.tooltip_text = "Sort the tree (folders first). Only the order changes, never what is checked or deleted"
+	sort_option.fit_to_longest_item = false
+	for sort_id: int in UserDataOps.SORT_LABELS:
+		sort_option.add_item(UserDataOps.SORT_LABELS[sort_id], sort_id)
+	sort_option.select(sort_option.get_item_index(_sort_key()))
+	sort_option.item_selected.connect(_on_sort_selected)
+	toolbar_hbox.add_child(sort_option)
+
+	auto_refresh_check = CheckBox.new()
+	auto_refresh_check.text = "Auto-refresh"
+	auto_refresh_check.tooltip_text = "While this dialog is open, rescan user:// every second and update the tree when something changed. Keeps your checks, folders, search, filters, sort and selection; new files start checked"
+	auto_refresh_check.button_pressed = _auto_refresh_enabled()
+	auto_refresh_check.toggled.connect(_on_auto_refresh_toggled)
+	toolbar_hbox.add_child(auto_refresh_check)
+
 	var toolbar_spacer := Control.new()
 	toolbar_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar_hbox.add_child(toolbar_spacer)
@@ -380,6 +442,9 @@ func show_confirmation_dialog() -> void:
 	root.set_tooltip_text(1, root_tooltip)
 
 	populate_tree(root, "user://")
+	_sort_cache.clear()
+	UserDataOps.sort_children(root, _sort_key(), _sort_cache)
+	_last_signature = UserDataOps.listing_signature()
 
 	tree.item_edited.connect(_on_tree_item_edited)
 	tree.item_mouse_selected.connect(_on_tree_item_mouse_selected)
@@ -414,6 +479,13 @@ func show_confirmation_dialog() -> void:
 	update_warning_label()
 
 	confirmation_dialog.add_child(vbox)
+	refresh_timer = Timer.new()
+	refresh_timer.wait_time = 1.0
+	refresh_timer.one_shot = false
+	refresh_timer.timeout.connect(_on_auto_refresh_tick)
+	confirmation_dialog.add_child(refresh_timer)
+	if auto_refresh_check.button_pressed:
+		refresh_timer.autostart = true
 	confirmation_dialog.confirmed.connect(_on_confirmed_delete)
 	confirmation_dialog.canceled.connect(_on_dialog_closed)
 	confirmation_dialog.close_requested.connect(_on_dialog_closed)
@@ -668,13 +740,40 @@ func _count_tree_items(item: TreeItem, counts: Array) -> void:
 
 
 ## Clears and repopulates the tree to reflect the current state of user://.
+## Everything is checked again (as on first open); the sort and the active
+## search and filters are re-applied.
 func _on_refresh_tree() -> void:
-	if tree == null:
+	if tree == null or _refreshing:
 		return
+	_refreshing = true
 
 	var tween_out := create_tween()
 	tween_out.tween_property(tree, "modulate:a", 0.0, 0.15)
 	await tween_out.finished
+
+	if tree == null:
+		_refreshing = false
+		return
+	_rebuild_tree(false)
+
+	var tween_in := create_tween()
+	tween_in.tween_property(tree, "modulate:a", 1.0, 0.2)
+	_refreshing = false
+
+
+## Rebuilds the tree from disk, then sorts and re-applies the search and type
+## filters (so rows a filter hides stay hidden and are never deleted).
+## With [param keep_state] (auto-refresh) it also restores each row's check
+## state and collapsed state by path and the selected row; files that appeared
+## since are checked, like on first open. Without it, every row starts checked.
+func _rebuild_tree(keep_state: bool) -> void:
+	var state := {}
+	var selected_path := ""
+	if keep_state and tree.get_root() != null:
+		state = UserDataOps.capture_state(tree.get_root())
+		var selected := tree.get_selected()
+		if selected != null and selected.get_metadata(1) is String:
+			selected_path = selected.get_metadata(1)
 
 	tree.clear()
 	_update_clean_matches()
@@ -693,10 +792,19 @@ func _on_refresh_tree() -> void:
 	root.set_tooltip_text(1, root_tooltip)
 
 	populate_tree(root, "user://")
+	if keep_state:
+		UserDataOps.restore_state(root, state)
+	_sort_cache.clear()
+	UserDataOps.sort_children(root, _sort_key(), _sort_cache)
+	UserDataOps.filter_tree(root, search_text.text.to_lower() if search_text else "", active_type_filters)
+	_last_signature = UserDataOps.listing_signature()
+	if selected_path != "":
+		var item := UserDataOps.find_item_by_path(root, selected_path)
+		if item != null and item.visible:
+			item.select(0)
+			tree.scroll_to_item(item)
 	update_warning_label()
-
-	var tween_in := create_tween()
-	tween_in.tween_property(tree, "modulate:a", 1.0, 0.2)
+	_update_select_all_checkbox()
 
 
 ## Updates the warning label to reflect the current selection.
@@ -1031,6 +1139,8 @@ func _on_help_pressed() -> void:
 		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
 		["Clean on Play", "Optionally delete chosen user:// items (paths, folders with a trailing /, or * globs such as *.tmp) every time you press Play, so stale test data does not leak between runs. Off by default; the row below the tree shows how many items match now."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
+		["Sort", "Order the tree by name, size (largest first) or modified time (newest first). Folders always stay first and only the order changes, never what is checked or deleted. Remembered per project."],
+		["Auto-refresh", "While the dialog is open, rescans user:// every second and updates the tree when something changed, keeping your checks, expanded folders, search, filters, sort and selected row. New files start checked, as on first open. Off by default; remembered per project."],
 		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
 	]
 
@@ -1222,6 +1332,9 @@ func _on_dialog_closed() -> void:
 		filter_menu_button = null
 		clear_filter_btn = null
 		clean_matches_label = null
+		sort_option = null
+		auto_refresh_check = null
+		refresh_timer = null
 		active_type_filters.clear()
 
 

@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.11.0** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.12.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -64,6 +64,8 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Filter by type | Use the **All Types** dropdown: Files, Folders, `.json`, `.cache`, Backups & temp (`.bak`, `.tmp`), Test runner data (`user://test_runner/`), Logs (`.log`, `.jsonl`) |
 | Clear filters | Click **×** next to the dropdown |
 | Refresh the list | Click the **⟳** icon |
+| Sort the tree | **Sort** menu: Name, Size (largest first), Modified (newest first). Folders stay first; checks and what Delete removes never change |
+| Follow `user://` live | Tick **Auto-refresh**: rescans every second while the dialog is open and updates only when something changed, keeping your checks, folders, search, filters, sort and selection. New files start checked |
 | Open in file manager | Click **Open Folder** |
 | Copy engine logs | Click **Copy Logs** (de-duplicates automatically) |
 | Inspect a file | Click a row: the **Preview** pane shows it (JSON pretty-printed, hex dump for binary, thumbnail for images). **Copy** copies the text; nothing is changed |
@@ -94,6 +96,8 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip) or go through a symlink are skipped
 - **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
 - **Clean on Play** — Optionally delete chosen `user://` items (paths, folders, `*` globs) automatically every time you press Play, so stale test data and caches don't leak between runs. Off by default
+- **Sort** — Order the tree by name, size or modified time; folders first, remembered per project
+- **Auto-refresh** — Optionally rescan `user://` every second while the dialog is open, keeping your checks, expanded folders, filters, sort and selection (off by default; a new file takes its folder's check state, so nothing appears checked inside a folder you unchecked)
 - **Refresh** — Rescan `user://` without reopening the plugin
 - **Version Check** — Warns on Godot versions below 4.3
 - **Error Resilience** — Gracefully handles unreadable files, locked directories, and permission errors
@@ -198,6 +202,9 @@ Returns an appropriate editor theme icon for the file type.
 | `zip_listing(zip)` / `unzip_into_user(zip)` / `restore_destination(entry)` | Preview and extract a zip into `user://`; hostile entry names and symlinked folders refused |
 | `zip_paths(paths, zip_path)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped; `{error, files, skipped}` |
 | `clean_targets(patterns)` / `invalid_patterns(patterns)` / `clean_on_play(patterns)` | Clean on Play: the existing, safe, minimal `user://` paths the patterns select; the patterns it ignores; and `delete_paths` over the matches |
+| `sort_children(parent, key, cache)` | Reorders rows recursively (folders first; name, size, or modified time; ties by name) without touching check state, visibility or metadata |
+| `listing_signature(root)` | Hash over relative paths, sizes and modified times (hidden included, symlinked folders not entered, capped at 20000 entries): changes when `user://` changes |
+| `capture_state(root)` / `restore_state(root, state)` | Per-path check and collapsed state, put back after a rebuild; new rows take their folder's check state |
 | `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
 | `describe(paths)` | `{files, folders, bytes}` for the status bar |
 | `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |
@@ -296,6 +303,7 @@ godot --headless --path . --script tests/test_restore_zip.gd
 | `test_restore_zip.gd` | Restore Zip: round trip with Zip Selected, overwrite preview, hostile names (`..`, absolute, drive letter, backslash), nothing written outside `user://`, symlinked folders refused |
 | `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
 | `test_clean_on_play.gd` | Clean on Play: exact paths, trailing-slash folders, globs in a subfolder, no recursion, invalid patterns ignored and reported, nothing outside `user://`, symlinked folders not entered, minimal and de-duplicated results, exactly the matches deleted |
+| `test_sort_refresh.gd` | Sort by name/size/modified (folders first, ties by name, recursive), sort leaves checks/visibility/metadata alone, listing signature on add/resize/remove and symlinked folders, capture/restore of checks and collapsed folders |
 | `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
 
 ### CI Integration

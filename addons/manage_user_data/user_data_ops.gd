@@ -488,6 +488,226 @@ static func filter_tree(item: TreeItem, search_term: String, filter_types: Array
 	return shown
 
 
+# -- Sorting, state capture and change detection --------------------------------
+
+## Sort keys for [method sort_children] (the dialog's Sort menu).
+const SORT_NAME := 0
+const SORT_SIZE := 1
+const SORT_MODIFIED := 2
+
+## Menu label for each sort key, in menu order.
+const SORT_LABELS := {
+	SORT_NAME: "Name",
+	SORT_SIZE: "Size (largest first)",
+	SORT_MODIFIED: "Modified (newest first)",
+}
+
+## [method listing_signature] stops after this many entries, so a huge profile
+## costs a bounded amount of work every second. A change made only past the cap
+## goes unnoticed until the next manual Refresh.
+const SIGNATURE_ENTRY_CAP := 20000
+
+
+## Reorders the children of [param parent], recursively, by [param key]
+## ([constant SORT_NAME], [constant SORT_SIZE] or [constant SORT_MODIFIED]).
+## Folders always come first; then by name (A to Z), size (largest first) or
+## modified time (newest first). Ties fall back to the name, case-insensitive.
+##
+## Only the order changes: check state, visibility, collapsed state and
+## metadata are never touched, so a sort can never change what Delete removes.
+##
+## A folder's size is [method calculate_folder_size]. A folder's modified time
+## is the newest modified time of any file inside it (not following symlinks),
+## or the folder's own time when it holds no files. Links count as size 0 and
+## modified time 0 (their target is never read).
+##
+## [param cache] maps path to the computed value so repeated sorts do not hit
+## the disk again. It is filled by this call. Use one cache per key, and
+## discard it when the listing is rebuilt.
+static func sort_children(parent: TreeItem, key: int, cache: Dictionary = {}) -> void:
+	if parent == null:
+		return
+	var entries: Array = []
+	var child := parent.get_first_child()
+	while child != null:
+		var path := _path_of(child)
+		var value := 0
+		if key != SORT_NAME:
+			value = _sort_value(child, path, key, cache)
+		entries.append({"item": child, "folder": is_folder_item(child), "name": child.get_text(0), "value": value})
+		child = child.get_next()
+	if entries.size() < 2:
+		for entry: Dictionary in entries:
+			sort_children(entry.item, key, cache)
+		return
+	entries.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool:
+			if a.folder != b.folder:
+				return a.folder
+			if key != SORT_NAME and a.value != b.value:
+				return a.value > b.value
+			var an: String = a.name.to_lower()
+			var bn: String = b.name.to_lower()
+			if an != bn:
+				return an < bn
+			return a.name < b.name
+	)
+	# Place from the back: each item goes right before the one placed after it.
+	var anchor: TreeItem = null
+	for i in range(entries.size() - 1, -1, -1):
+		var item: TreeItem = entries[i].item
+		if anchor != null and item.get_next() != anchor:
+			item.move_before(anchor)
+		anchor = item
+	for entry: Dictionary in entries:
+		sort_children(entry.item, key, cache)
+
+
+static func _sort_value(item: TreeItem, path: String, key: int, cache: Dictionary) -> int:
+	if path != "" and cache.has(path):
+		return cache[path]
+	var value := 0
+	if path != "" and item.get_text(1) != "Link" and not _is_link(path):
+		if is_folder_item(item):
+			value = calculate_folder_size(path) if key == SORT_SIZE else _newest_modified(path)
+		elif key == SORT_SIZE:
+			value = _file_size(path)
+		else:
+			value = FileAccess.get_modified_time(path)
+	if path != "":
+		cache[path] = value
+	return value
+
+
+## Newest modified time of any file under [param path] (links not followed),
+## or the folder's own modified time when it holds no files.
+static func _newest_modified(path: String) -> int:
+	var newest := _newest_file_time(path)
+	return newest if newest > 0 else FileAccess.get_modified_time(path)
+
+
+static func _newest_file_time(path: String) -> int:
+	var newest := 0
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return 0
+	dir.include_hidden = true
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name != "." and file_name != ".." and not dir.is_link(file_name):
+			var full_path := path.path_join(file_name)
+			if dir.current_is_dir():
+				newest = maxi(newest, _newest_file_time(full_path))
+			else:
+				newest = maxi(newest, FileAccess.get_modified_time(full_path))
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return newest
+
+
+## Records each row's check state and collapsed state, by path, so a rebuilt
+## tree can get them back ([method restore_state]). Returns
+## [code]{path: {"checked": bool, "collapsed": bool}}[/code]. Rows without a
+## path are skipped.
+static func capture_state(root: TreeItem) -> Dictionary:
+	var out := {}
+	_capture(root, out)
+	return out
+
+
+static func _capture(item: TreeItem, out: Dictionary) -> void:
+	if item == null:
+		return
+	var path := _path_of(item)
+	if path != "":
+		out[path] = {"checked": item.is_checked(COL_CHECK), "collapsed": item.is_collapsed()}
+	var child := item.get_first_child()
+	while child != null:
+		_capture(child, out)
+		child = child.get_next()
+
+
+## Applies a [method capture_state] result to a freshly built tree. A row that
+## is not in [param state] (a file that appeared since) takes the check state of
+## its nearest folder that is: checked under a checked folder, as on first open,
+## but unchecked inside a folder the user unchecked, so it can't be deleted
+## without them having chosen it. State for paths that no longer exist is
+## ignored. Visibility is not part of the state: re-apply the
+## search and type filters afterwards so "only checked and visible rows are
+## deleted" keeps holding.
+static func restore_state(root: TreeItem, state: Dictionary, inherited_checked: bool = true) -> void:
+	if root == null:
+		return
+	var path := _path_of(root)
+	if path != "" and state.has(path):
+		var saved: Dictionary = state[path]
+		root.set_checked(COL_CHECK, bool(saved.get("checked", true)))
+		if root.get_first_child() != null:
+			root.set_collapsed(bool(saved.get("collapsed", false)))
+	elif path != "" and path != ROOT_PATH:
+		# A row that appeared since the capture takes its folder's check state:
+		# a new file inside a folder the user unchecked must not become
+		# deletable behind their back.
+		root.set_checked(COL_CHECK, inherited_checked)
+	var child := root.get_first_child()
+	while child != null:
+		restore_state(child, state, root.is_checked(COL_CHECK))
+		child = child.get_next()
+
+
+## Finds the row whose path is [param path], or null.
+static func find_item_by_path(root: TreeItem, path: String) -> TreeItem:
+	if root == null:
+		return null
+	if _path_of(root) == path:
+		return root
+	var child := root.get_first_child()
+	while child != null:
+		var found := find_item_by_path(child, path)
+		if found != null:
+			return found
+		child = child.get_next()
+	return null
+
+
+## A number that changes when something under [param root_path] is added,
+## removed, resized or modified: a hash over every entry's relative path, plus
+## size and modified time for files. Hidden files are included and symlinked
+## folders are listed but never entered. Order independent. Stops after
+## [constant SIGNATURE_ENTRY_CAP] entries (see there). Read-only.
+static func listing_signature(root_path: String = ROOT_PATH) -> int:
+	var state := {"sum": 0, "count": 0}
+	_sign(root_path, "", state)
+	return int(state.sum) ^ (int(state.count) * 1000003)
+
+
+static func _sign(base: String, rel: String, state: Dictionary) -> void:
+	var path := base if rel == "" else base.path_join(rel)
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+	dir.include_hidden = true
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name != "." and file_name != "..":
+			if state.count >= SIGNATURE_ENTRY_CAP:
+				break
+			state.count += 1
+			var child_rel := file_name if rel == "" else rel + "/" + file_name
+			var full_path := base.path_join(child_rel)
+			if dir.is_link(file_name):
+				state.sum += hash("L|" + child_rel)
+			elif dir.current_is_dir():
+				state.sum += hash("D|" + child_rel)
+				_sign(base, child_rel, state)
+			else:
+				state.sum += hash("F|%s|%d|%d" % [child_rel, _file_size(full_path), FileAccess.get_modified_time(full_path)])
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+
 # -- Preview -------------------------------------------------------------------
 
 const PREVIEW_IMAGE_EXTENSIONS := ["png", "jpg", "jpeg", "webp", "svg"]

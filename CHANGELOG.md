@@ -4,6 +4,14 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.12.0] (2026-11-22)
+
+- **Sort**: a toolbar menu orders the tree by Name, Size (largest first) or Modified (newest first). Folders always stay first, ties fall back to the name (case-insensitive). A folder's size is its total size; its modified time is the newest file inside it (or its own time when empty). Only the order changes: check state, visibility, collapsed state and metadata are untouched, so sorting never changes what Delete removes. Remembered per project in the editor's project metadata.
+- **Auto-refresh**: an off-by-default checkbox (remembered per project). While the dialog is open, a 1 second timer compares a cheap listing signature and rebuilds the tree only when `user://` changed, keeping checked/unchecked rows and expanded/collapsed folders (by path), the search text, type filters, sort and the selected row. Files that appear are checked by default, exactly like on first open.
+- Manual Refresh and Auto-refresh now re-apply the search and type filters after rebuilding, so rows a filter hides stay hidden and are not deleted.
+- `UserDataOps.sort_children()`, `listing_signature()` (hash of relative paths, sizes and modified times; hidden files included, symlinked folders never entered, capped at 20000 entries), `capture_state()`, `restore_state()` and `find_item_by_path()`. Tested headless in `tests/test_sort_refresh.gd`.
+- After an auto-refresh, a file that appeared since takes the check state of its folder: inside a folder you unchecked it stays unchecked, so Delete can't remove something you never chose.
+
 ## [2.11.0] (2026-11-22)
 
 - **Clean on Play**: optionally deletes chosen `user://` items every time you press Play, so stale test data, caches or a save don't leak between runs. A checkbox and a comma-separated pattern field (default `test_runner/`) in the dialog, with a live count of what matches; off by default, stored per project in the editor's project metadata. Implemented with `EditorPlugin._build()`, which always returns true, so it never blocks a run.

@@ -4,6 +4,11 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.10.0] (2026-11-22)
+
+- **Preview pane**: selecting a row shows its contents beside the tree, so a save can be inspected without leaving the editor. JSON is pretty-printed (`.jsonl` shows its first 50 rows), invalid JSON shows the raw text with the error and line, binary files show a hex dump of the first 256 bytes, images show a thumbnail, folders show a file count and size. A **Copy** button copies the text. Read-only: it reads at most 64 KB, follows no symbolic links, and never changes the checkboxes.
+- `UserDataOps.preview()` and `hex_dump()`, tested headless in `tests/test_preview.gd`. The dialog is wider by default to fit the pane.
+
 ## [2.9.0] (2026-11-22)
 
 - **Restore Zip…**: picks a `.zip` (such as one from Zip Selected), shows how many files it will write and how many existing files it will overwrite, then extracts it into `user://` with entry names taken relative to `user://`. Entries that would land outside `user://` or on `user://` itself (`..`, `.`, empty or backslash segments, absolute and drive-letter names: "zip-slip") are skipped, and so is anything that would be written through a symbolic link inside `user://`.

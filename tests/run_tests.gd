@@ -13,6 +13,7 @@ extends SceneTree
 ##   godot --headless --script tests/test_deletion_safety.gd
 ##   godot --headless --script tests/test_zip.gd
 ##   godot --headless --script tests/test_restore_zip.gd
+##   godot --headless --script tests/test_preview.gd
 
 
 func _init() -> void:

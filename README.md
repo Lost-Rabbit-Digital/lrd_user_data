@@ -44,7 +44,8 @@ A Godot 4 editor plugin for browsing and selectively deleting your project's `us
    └── addons/
        └── manage_user_data/
            ├── plugin.cfg
-           └── plugin.gd
+           ├── plugin.gd
+           └── user_data_ops.gd
    ```
 2. **Project → Project Settings → Plugins** → enable **Manage User Data**
 
@@ -59,24 +60,24 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Action | How |
 |---|---|
 | Delete everything | Leave all items checked → **Delete Selected** |
-| Delete specific files | Uncheck **Select All** → tick what you want → **Delete Selected** |
+| Delete specific files | Uncheck **Select All** → tick what you want → **Delete Selected**. **Select All** only changes rows that are visible, so rows hidden by a search or filter keep their state |
 | Find a file | Type in the **Search** bar |
 | Filter by type | Use the **All Types** dropdown: Files, Folders, `.json`, `.cache`, Backups & temp (`.bak`, `.tmp`), Test runner data (`user://test_runner/`), Logs (`.log`, `.jsonl`) |
-| Clear filters | Click **×** next to the dropdown |
-| Refresh the list | Click the **⟳** icon |
+| Clear filters | Click **×** (shown while a type filter is active): it clears the search text and every type filter |
+| Refresh the list | Click the **⟳** icon. This rescans `user://` and **re-checks every row** (as on first open); the search, filters and sort are re-applied. Auto-refresh and the Delete buttons keep your checks instead |
 | Act on one row | Right-click it: copy its path, show it in the file manager, **Only this** (checks just that row, then Delete or Zip), check/uncheck a folder, or **Delete this…** (asks first) |
 | Sort the tree | **Sort** menu: Name, Size (largest first), Modified (newest first). Folders stay first; checks and what Delete removes never change |
-| Follow `user://` live | Tick **Auto-refresh**: rescans every second while the dialog is open and updates only when something changed, keeping your checks, folders, search, filters, sort and selection. New files start checked |
+| Follow `user://` live | Tick **Auto-refresh**: rescans every second while the dialog is open and updates only when something changed, keeping your checks, folders, search, filters, sort and selection. A new file takes its folder's check state (checked under a checked folder, unchecked inside one you unchecked) |
 | Open in file manager | Click **Open Folder** |
-| Copy engine logs | Click **Copy Logs** (de-duplicates automatically) |
-| Inspect a file | Click a row: the **Preview** pane shows it (JSON pretty-printed, hex dump for binary, thumbnail for images). **Copy** copies the text; nothing is changed |
-| Zip for a bug report | Click **Zip Selected…**: the checked, visible items as one `.zip`, paths relative to `user://` |
+| Copy engine logs | Click **Copy Logs**: copies `user://logs/godot.log` with repeated lines dropped (skipped above 50 MB) |
+| Inspect a file | Click a row: the **Preview** pane shows it (JSON pretty-printed, hex dump for binary, thumbnail for images up to 8 MB). Reads at most 64 KB. **Copy** copies the text; nothing is changed |
+| Zip for a bug report | Click **Zip Selected…**: the checked, visible items as one `.zip`, paths relative to `user://` (hidden files included, symlinks skipped, never the archive itself). A failed write leaves no archive |
 | Clean on every Play | Tick **Clean on Play** under the tree and list patterns (default `test_runner/`). Off by default; see [Clean on Play](#clean-on-play) |
-| Load someone's zip | Click **Restore Zip…**: shows how many files it writes and overwrites, then extracts into `user://` |
+| Load someone's zip | Click **Restore Zip…**: shows how many files it writes and overwrites, then extracts into `user://`. Unsafe entries and the archive itself are skipped; afterwards the tree is refreshed (re-checking every row) |
 
 <img src="screenshot_2.png" width="512" alt="File tree screenshot">
 
-The status bar shows a live count and total size of exactly what will be deleted before you confirm. Deletion is permanent and cannot be undone.
+The status bar shows a live count and total size of exactly what will be deleted before you confirm. Deletion is permanent and cannot be undone. After **Delete Selected** or a single **Delete this…** the tree is rebuilt keeping every other row's check state, so a second delete never removes rows you unchecked.
 
 **What gets deleted:** only items that are checked **and** visible. Anything hidden by the search box or type filter is never deleted, and unchecking a file inside a checked folder protects that file: the folder is then kept and only its other checked items are removed. A folder is removed wholesale only when it and everything under it is checked and visible. Nothing outside `user://` is touched, and symbolic links are removed as links without following them.
 
@@ -89,18 +90,18 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **File Tree** — Full recursive view of `user://` with per-item checkboxes
 - **Real-time Search** — Instantly filters the tree as you type; parent folders auto-expand
 - **Type Filters** — Narrow to Files Only, Folders Only, `.json`, `.cache`, save backups and temp files, test-runner data, or logs. A filter narrows what **Delete** removes too
-- **Bulk Selection** — Select All / Deselect All with indeterminate state support
+- **Bulk Selection** — Select All / Deselect All (visible rows only) with indeterminate state support
 - **File Sizes** — Inline sizes on every entry; status bar totals the selection
 - **Open in OS** — Launch `user://` in your native file manager
-- **Copy Logs** — One-click copy of de-duplicated `godot.log` to clipboard
-- **Preview** — Click a file to read it beside the tree: pretty-printed JSON (first rows of `.jsonl`), text, hex dump for binary, image thumbnail, folder summary. Read-only, 64 KB cap
-- **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip) or go through a symlink are skipped
-- **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
+- **Copy Logs** — One-click copy of `user://logs/godot.log` with duplicate lines dropped (nothing is copied above 50 MB)
+- **Preview** — Click a file to read it beside the tree: pretty-printed JSON (first rows of `.jsonl`), text, hex dump for binary, image thumbnail (images over 8 MB are not loaded), folder summary. Read-only, 64 KB cap
+- **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip), go through a symlink or point at the archive being read are skipped
+- **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting. The archive is never added to itself (compared case-insensitively on Windows and macOS) and a failed write leaves no partial file
 - **Clean on Play** — Optionally delete chosen `user://` items (paths, folders, `*` globs) automatically every time you press Play, so stale test data and caches don't leak between runs. Off by default
 - **Right-click menu** — Copy path, Copy absolute path, Show in file manager, Only this (check just that row), Check/Uncheck all in a folder, and Delete this… (with confirmation)
 - **Sort** — Order the tree by name, size or modified time; folders first, remembered per project
 - **Auto-refresh** — Optionally rescan `user://` every second while the dialog is open, keeping your checks, expanded folders, filters, sort and selection (off by default; a new file takes its folder's check state, so nothing appears checked inside a folder you unchecked)
-- **Refresh** — Rescan `user://` without reopening the plugin
+- **Refresh** — Rescan `user://` without reopening the plugin (re-checks every row; the search, filters and sort are re-applied)
 - **Version Check** — Warns on Godot versions below 4.3
 - **Error Resilience** — Gracefully handles unreadable files, locked directories, and permission errors
 
@@ -151,6 +152,9 @@ Returns the total byte size of all files under `path`, recursively. Skips unread
 #### `apply_filters() → void`
 Applies the current search text and type filters to the tree. Matching parents auto-expand.
 
+#### `expand_matching_parents(item: TreeItem) → void`
+Expands every visible folder that has at least one visible child.
+
 #### `filter_tree_item(item: TreeItem, search_term: String, filter_types: Array[int]) → bool`
 Recursively filters tree items (delegates to `UserDataOps.filter_tree`). Returns `true` if the item or any descendant matches.
 
@@ -191,27 +195,34 @@ get_file_type_label("Makefile")         # "File"
 #### `get_file_icon(file_name: String) → Texture2D`
 Returns an appropriate editor theme icon for the file type.
 
-**Supported extensions:** `.json`, `.jsonl`, `.log`, `.bak`, `.tmp`, `.cfg`, `.ini`, `.toml`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.svg`, `.wav`, `.ogg`, `.mp3`, `.tscn`, `.tres`, `.gd`, `.cache`, `.save`, `.dat`
+**Supported extensions:** `.json`, `.jsonl`, `.log`, `.bak`, `.tmp`, `.cfg`, `.ini`, `.toml`, `.png`, `.jpg`, `.jpeg`, `.webp`, `.bmp`, `.svg`, `.wav`, `.ogg`, `.mp3`, `.tscn`, `.tres`, `.gd`, `.cache`, `.save`, `.dat` (anything else gets the generic file icon)
 
 ### `UserDataOps` (editor-independent)
 
 `addons/manage_user_data/user_data_ops.gd` holds every rule that decides what is shown and what is deleted. It uses no editor API, so it runs headless and the tests call it directly:
 
-| Function | Does |
+| Function / constant | Does |
 |---|---|
 | `plan_deletion(root)` / `selected_paths(root)` | The minimal list of paths a delete would remove (and Zip archives): checked **and** visible only |
-| `preview(path, max_bytes)` | Read-only look at a file for the Preview pane: `{kind, text, truncated, bytes, error}`; json / text / binary (hex dump) / image / folder / missing / refused; reads at most `max_bytes` |
-| `zip_listing(zip)` / `unzip_into_user(zip)` / `restore_destination(entry)` | Preview and extract a zip into `user://`; hostile entry names and symlinked folders refused |
-| `zip_paths(paths, zip_path)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped; `{error, files, skipped}` |
-| `clean_targets(patterns)` / `invalid_patterns(patterns)` / `clean_on_play(patterns)` | Clean on Play: the existing, safe, minimal `user://` paths the patterns select; the patterns it ignores; and `delete_paths` over the matches |
-| `sort_children(parent, key, cache)` | Reorders rows recursively (folders first; name, size, or modified time; ties by name) without touching check state, visibility or metadata |
-| `listing_signature(root)` | Hash over relative paths, sizes and modified times (hidden included, symlinked folders not entered, capped at 20000 entries): changes when `user://` changes |
-| `capture_state(root)` / `restore_state(root, state)` | Per-path check and collapsed state, put back after a rebuild; new rows take their folder's check state |
-| `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
+| `is_fully_selected(item)` | True when the row and all its descendants are checked and visible |
+| `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://`; symlinks removed as links |
 | `describe(paths)` | `{files, folders, bytes}` for the status bar |
+| `is_safe_target(path)`, `is_test_data(path)`, `is_backup_or_temp(name)` | Path predicates |
 | `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |
 | `matches_filters(name, path, is_folder, search, filters)` / `matches_type(...)` | One row's match |
-| `is_safe_target(path)`, `is_test_data(path)`, `is_backup_or_temp(name)` | Path predicates |
+| `is_folder_item(item)` | True for a folder or the `user://` row (judged from the row's type text) |
+| `FILTER_FILES` … `FILTER_LOGS`, `FILTER_LABELS`, `TEST_ROOT` | Filter ids, their menu labels, and the test-runner folder |
+| `set_visible_checked(item, checked)` | Select All: sets the check state of visible rows only, hidden rows keep theirs |
+| `set_subtree_checked(item, checked)` / `only_this(root, target)` | Check or uncheck a row and everything under it; uncheck everything then check just one row |
+| `context_actions(path, is_folder)` / `absolute_path(path)` | Which right-click entries are enabled (`ACTION_*` ids) and the OS path for a `user://` path |
+| `preview(path, max_bytes)` / `hex_dump(buf, limit)` | Read-only look at a file for the Preview pane: `{kind, text, truncated, bytes, error}`; json / text / binary (hex dump) / image / folder / missing / refused; reads at most `max_bytes` (64 KB by default); images over `PREVIEW_IMAGE_MAX_BYTES` (8 MB) are not loaded; `.jsonl` shows `PREVIEW_JSONL_LINES` (50) rows |
+| `zip_paths(paths, zip_path)` / `default_zip_name(project)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped, never the zip itself; `{error, files, skipped}`; a failed write removes the partial archive |
+| `zip_listing(zip)` / `unzip_into_user(zip)` / `restore_destination(entry)` | Preview and extract a zip into `user://`; hostile entry names, symlinked folders and the archive itself refused |
+| `case_insensitive_paths`, `zip_fault` | Test seams: force case-insensitive path comparison (-1 detects the OS), inject a zip write failure |
+| `clean_targets(patterns)` / `invalid_patterns(patterns)` / `clean_on_play(patterns)` | Clean on Play: the existing, safe, minimal `user://` paths the patterns select; the patterns it ignores; and `delete_paths` over the matches |
+| `sort_children(parent, key, cache)` | Reorders rows recursively (folders first; `SORT_NAME`, `SORT_SIZE`, `SORT_MODIFIED`, labels in `SORT_LABELS`; ties by name) without touching check state, visibility or metadata |
+| `listing_signature(root)` | Hash over relative paths, sizes and modified times (hidden included, symlinked folders not entered, capped at `SIGNATURE_ENTRY_CAP` = 20000 entries): changes when `user://` changes |
+| `capture_state(root)` / `restore_state(root, state)` / `find_item_by_path(root, path)` | Per-path check and collapsed state, put back after a rebuild (new rows take their folder's check state); find a row by path |
 | `calculate_folder_size(path)`, `delete_directory_contents(path)` | Folder helpers; never follow symlinks |
 | `format_file_size(bytes)`, `get_file_type_label(name)` | Display helpers |
 
@@ -259,9 +270,9 @@ Patterns are comma-separated and relative to `user://`:
 | `*.tmp` | Names ending in `.tmp` directly in `user://` |
 | `saves/*.bak`, `logs/*.log` | The same, inside that one folder |
 
-Rules: `*` and `?` work in the **last segment only** and match names in that one folder (`String.match`); there is no recursive `**`, so `*.tmp` does not reach into subfolders. Patterns that are blank, absolute (`/etc`), drive-letter (`C:/x`), contain `\`, `.`, `..` or empty segments, or put a wildcard in a folder name are ignored and listed in the label. Nothing outside `user://` is ever touched, `user://` itself never, and a symlinked folder is not looked into (a link itself is removed as a link). Because this runs unattended on every Play, keep patterns narrow: the dialog's count is the preview.
+Rules: `*` and `?` work in the **last segment only** and match names in that one folder (`String.match`); there is no recursive `**`, so `*.tmp` does not reach into subfolders. Patterns that are blank, absolute (`/etc`), contain a `:` (so drive letters such as `C:/x`) or a `\`, have `.`, `..` or empty segments, or put a wildcard in a folder name are ignored and listed in the label. Nothing outside `user://` is ever touched, `user://` itself never, and a symlinked folder is not looked into (a link itself is removed as a link). Because this runs unattended on every Play, keep patterns narrow: the dialog's count is the preview.
 
-A top-level pattern made only of wildcards and dots (`*`, `*/`, `?*`, `*.*`, `.*`, `*.`) is refused and listed as ignored: it would empty `user://` on every Play. Narrow it (`*.tmp`, `test_*/`, `.cache*`).
+A top-level pattern made only of wildcards and dots (`*`, `*/`, `?*`, `*.*`, `.*`, `*.`, `?.?`) is refused and listed as ignored: it would empty `user://` on every Play. Narrow it (`*.tmp`, `test_*/`, `.cache*`).
 
 ## Running Tests
 
@@ -300,16 +311,18 @@ godot --headless --path . --script tests/test_context_menu.gd
 | Test File | What It Covers |
 |---|---|
 | `test_format_file_size.gd` | Byte/KB/MB/GB formatting, boundary values |
-| `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown extensions |
-| `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), and what a filtered delete plans to remove |
+| `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown and missing extensions |
+| `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), what a filtered delete plans to remove, and Select All touching only visible rows |
 | `test_deletion_safety.gd` | The plugin's real deletion code against real files: unchecked children survive, filtered-out items survive, whole-folder deletes, refusal outside `user://`, dotfiles, status-bar stats |
-| `test_preview.gd` | Preview: JSON pretty-print, invalid JSON error line, cut at `max_bytes` (not inside a character), hex dump format, refused outside `user://`, folder summary, missing file, first `.jsonl` rows |
-| `test_restore_zip.gd` | Restore Zip: round trip with Zip Selected, overwrite preview, hostile names (`..`, absolute, drive letter, backslash), nothing written outside `user://`, symlinked folders refused |
-| `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
-| `test_clean_on_play.gd` | Clean on Play: exact paths, trailing-slash folders, globs in a subfolder, no recursion, invalid patterns ignored and reported, nothing outside `user://`, symlinked folders not entered, minimal and de-duplicated results, exactly the matches deleted |
-| `test_sort_refresh.gd` | Sort by name/size/modified (folders first, ties by name, recursive), sort leaves checks/visibility/metadata alone, listing signature on add/resize/remove and symlinked folders, capture/restore of checks and collapsed folders |
-| `test_context_menu.gd` | Right-click menu: enabled actions for root/file/folder/unsafe rows, Only this and Check/Uncheck folder on a real `Tree`, absolute path, deleting one item removes only that item |
-| `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
+| `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths (missing, nested, deepest first), status-bar stats |
+| `test_preview.gd` | Preview: JSON pretty-print, invalid JSON error line, cut at `max_bytes` (not inside a character), hex dump and invalid UTF-8 as binary, refused outside `user://`, folder summary, missing file, first `.jsonl` rows and a bad line's number, images left to the UI and the 8 MB image cap, the file is never changed |
+| `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself (also on a case-insensitive filesystem), a failed write leaves no archive, same selection as Delete, safe default name |
+| `test_restore_zip.gd` | Restore Zip: round trip with Zip Selected, overwrite preview, hostile names (`..`, absolute, drive letter, backslash), nothing written outside `user://`, symlinked folders refused, the archive never overwrites itself (also case-insensitively), missing archive |
+| `test_clean_on_play.gd` | Clean on Play: exact paths, trailing-slash folders, globs in a subfolder, no recursion, invalid patterns ignored and reported, top-level match-everything patterns (`*`, `*.*`, `.*`, `?.?` …) refused, nothing outside `user://`, symlinked folders not entered, minimal and de-duplicated results, exactly the matches deleted |
+| `test_sort_refresh.gd` | Sort by name/size/modified (folders first, ties by name, recursive), sort leaves checks/visibility/metadata alone, listing signature on add/resize/remove and symlinked folders, capture/restore of checks and collapsed folders, new rows inheriting an unchecked folder's or root's state |
+| `test_context_menu.gd` | Right-click menu: enabled actions for root/file/folder/unsafe rows, Only this and Check/Uncheck folder on a real `Tree`, absolute path, deleting one item removes only that item, unsafe paths refused |
+
+`tests/run_tests.gd` is only an index that prints the commands above; `run_all.sh` runs every `tests/test_*.gd`.
 
 ### CI Integration
 

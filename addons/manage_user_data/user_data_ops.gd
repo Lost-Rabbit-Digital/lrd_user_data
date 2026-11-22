@@ -1,8 +1,10 @@
 @tool
 extends RefCounted
-## Selection-to-deletion planning and the actual file removal for the
-## Manage User Data dialog. Kept free of editor APIs so it can be tested
-## headless against real files (see tests/test_deletion_safety.gd).
+## All decision logic of the Manage User Data dialog: selection-to-deletion
+## planning and file removal, filters, Clean on Play patterns, sort, auto-refresh
+## state, Preview, Zip Selected and Restore Zip. Kept free of editor APIs (it
+## only needs the tree rows it is handed) so it can be tested headless against
+## real files (see tests/).
 ##
 ## Safety rules:
 ## - Only items that are both checked AND visible (not hidden by a filter)
@@ -225,8 +227,9 @@ static func delete_paths(paths: Array[String]) -> Dictionary:
 ## "name": String, "folder_only": bool, "glob": bool}: [code]dir[/code] is the
 ## literal parent folder relative to user:// ("" for the top level) and
 ## [code]name[/code] the last segment (a glob when it has [code]*[/code] or
-## [code]?[/code]). Blank, absolute, drive-letter, backslash, "." / ".." / empty
-## segments and a wildcard outside the last segment are invalid.
+## [code]?[/code]). Blank, absolute, any pattern containing ":" (drive letters)
+## or a backslash, "." / ".." / empty segments, a wildcard outside the last
+## segment, and a top-level name made only of wildcards and dots are invalid.
 static func _parse_clean_pattern(pattern: String) -> Dictionary:
 	var bad := {"valid": false, "dir": "", "name": "", "folder_only": false, "glob": false}
 	var text := pattern.strip_edges()
@@ -528,7 +531,8 @@ static func matches_filters(
 	return matches_search and matches_type(file_name, path, is_folder, filter_types)
 
 
-## True for a tree row that is a folder (not a file or a link).
+## True for a tree row that is a folder or the user:// root row (judged by its
+## type text: "Folder..." or "Directory"; a file or a "Link" row is not).
 static func is_folder_item(item: TreeItem) -> bool:
 	var type_text := item.get_text(1)
 	return type_text.begins_with("Folder") or type_text == "Directory"
@@ -808,11 +812,13 @@ const PREVIEW_IMAGE_MAX_BYTES := 8 * 1024 * 1024
 ## Returns {"kind", "text", "truncated", "bytes", "error"}. [code]kind[/code] is
 ## "json" (parsed and pretty-printed; .jsonl shows its first lines), "text",
 ## "binary" (NUL bytes or invalid UTF-8; [code]text[/code] is a hex dump of the
-## first 256 bytes), "image" (the UI loads it; [code]text[/code] is empty),
-## "folder" (a file count and size summary), "missing", or "refused" (outside
-## user://, or a symbolic link). Invalid JSON shows the raw text with
-## [code]error[/code] "invalid JSON: <message> at line N". [code]bytes[/code] is
-## the size on disk.
+## first 256 bytes), "image" (the UI loads it; [code]text[/code] is empty; an
+## image over [constant PREVIEW_IMAGE_MAX_BYTES] is not loaded and comes back as
+## "text" with a note, [code]truncated[/code] true), "folder" (a file count and
+## size summary), "missing", or "refused" (outside user://, a symbolic link, or
+## a file that cannot be opened). Invalid JSON shows the raw text with
+## [code]error[/code] "invalid JSON: <message> at line N" (not reported when the
+## read was cut at [param max_bytes]). [code]bytes[/code] is the size on disk.
 static func preview(path: String, max_bytes: int = 65536) -> Dictionary:
 	var out := {"kind": "missing", "text": "", "truncated": false, "bytes": 0, "error": ""}
 	if not is_safe_target(path):
@@ -1154,8 +1160,10 @@ static func restore_destination(entry_name: String) -> String:
 
 ## Extracts [param zip_path] (e.g. from Zip Selected) into user://, entry names
 ## taken as paths relative to user://. Existing files are overwritten; unsafe
-## entries (see [method restore_destination]) are skipped and nothing outside
-## user:// is ever written. Returns {"error": Error, "files": int,
+## entries (see [method restore_destination]) are skipped, as is an entry that
+## maps to the archive's own path (compared case-insensitively on Windows and
+## macOS, see [member case_insensitive_paths]), and nothing outside user:// is
+## ever written. Returns {"error": Error, "files": int,
 ## "skipped": Array[String]}.
 static func unzip_into_user(zip_path: String) -> Dictionary:
 	var skipped: Array[String] = []

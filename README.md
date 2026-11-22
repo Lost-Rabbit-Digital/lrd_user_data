@@ -4,7 +4,7 @@
 
 A Godot 4 editor plugin for browsing and selectively deleting your project's `user://` directory without leaving the editor.
 
-**Requires Godot 4.3+** · **MIT License** · **Version 2.10.0** ([changelog](CHANGELOG.md))
+**Requires Godot 4.3+** · **MIT License** · **Version 2.11.0** ([changelog](CHANGELOG.md))
 
 [![Godot Asset Library](https://img.shields.io/badge/Godot%20Asset%20Library-Manage%20User%20Data-478CBF?style=for-the-badge&logo=godotengine&logoColor=white)](https://godotengine.org/asset-library/asset/4811)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/Y7caBf7gBj)
@@ -20,6 +20,7 @@ A Godot 4 editor plugin for browsing and selectively deleting your project's `us
 - [Features](#features)
 - [API Reference](#api-reference)
 - [Save backups, test data and logs](#save-backups-test-data-and-logs)
+- [Clean on Play](#clean-on-play)
 - [Running Tests](#running-tests)
 - [What's in user://](#whats-in-user)
 - [Contributing](#contributing)
@@ -67,6 +68,7 @@ Click the **User Data** button in the editor toolbar to open the dialog.
 | Copy engine logs | Click **Copy Logs** (de-duplicates automatically) |
 | Inspect a file | Click a row: the **Preview** pane shows it (JSON pretty-printed, hex dump for binary, thumbnail for images). **Copy** copies the text; nothing is changed |
 | Zip for a bug report | Click **Zip Selected…**: the checked, visible items as one `.zip`, paths relative to `user://` |
+| Clean on every Play | Tick **Clean on Play** under the tree and list patterns (default `test_runner/`). Off by default; see [Clean on Play](#clean-on-play) |
 | Load someone's zip | Click **Restore Zip…**: shows how many files it writes and overwrites, then extracts into `user://` |
 
 <img src="screenshot_2.png" width="512" alt="File tree screenshot">
@@ -91,6 +93,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **Preview** — Click a file to read it beside the tree: pretty-printed JSON (first rows of `.jsonl`), text, hex dump for binary, image thumbnail, folder summary. Read-only, 64 KB cap
 - **Restore Zip** — Extract such a zip back into `user://` after a confirmation listing what it overwrites; entries that would land outside `user://` (zip-slip) or go through a symlink are skipped
 - **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
+- **Clean on Play** — Optionally delete chosen `user://` items (paths, folders, `*` globs) automatically every time you press Play, so stale test data and caches don't leak between runs. Off by default
 - **Refresh** — Rescan `user://` without reopening the plugin
 - **Version Check** — Warns on Godot versions below 4.3
 - **Error Resilience** — Gracefully handles unreadable files, locked directories, and permission errors
@@ -194,6 +197,7 @@ Returns an appropriate editor theme icon for the file type.
 | `preview(path, max_bytes)` | Read-only look at a file for the Preview pane: `{kind, text, truncated, bytes, error}`; json / text / binary (hex dump) / image / folder / missing / refused; reads at most `max_bytes` |
 | `zip_listing(zip)` / `unzip_into_user(zip)` / `restore_destination(entry)` | Preview and extract a zip into `user://`; hostile entry names and symlinked folders refused |
 | `zip_paths(paths, zip_path)` | Archives them, names relative to `user://`, hidden files in, symlinks and outside paths skipped; `{error, files, skipped}` |
+| `clean_targets(patterns)` / `invalid_patterns(patterns)` / `clean_on_play(patterns)` | Clean on Play: the existing, safe, minimal `user://` paths the patterns select; the patterns it ignores; and `delete_paths` over the matches |
 | `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
 | `describe(paths)` | `{files, folders, bytes}` for the status bar |
 | `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |
@@ -232,6 +236,22 @@ Common clean-ups:
 - **Send a repro to a teammate:** filter or search to the save, **Zip Selected…**, attach the zip. They load it with **Restore Zip…**.
 - **Start a fresh playthrough but keep settings:** uncheck `settings.cfg` (or filter to `.json`) before deleting.
 
+## Clean on Play
+
+Tick **Clean on Play** (under the tree) and the plugin deletes the matching `user://` items every time you press **Play** in the editor, before the game starts. It is **off by default**, the patterns default to `test_runner/`, and both are remembered per project (editor project metadata, not `project.godot`). It never blocks the run, and prints `Manage User Data: cleaned N item(s) before play` to the Output. A label next to the field shows how many items match right now.
+
+Patterns are comma-separated and relative to `user://`:
+
+| Pattern | Matches |
+|---|---|
+| `test_runner` | That file or folder (a folder goes whole) |
+| `saves/slot_0/progress.json` | One exact file |
+| `test_runner/` | The folder `test_runner` only (a trailing `/` means folders only) |
+| `*.tmp` | Names ending in `.tmp` directly in `user://` |
+| `saves/*.bak`, `logs/*.log` | The same, inside that one folder |
+
+Rules: `*` and `?` work in the **last segment only** and match names in that one folder (`String.match`); there is no recursive `**`, so `*.tmp` does not reach into subfolders. Patterns that are blank, absolute (`/etc`), drive-letter (`C:/x`), contain `\`, `.`, `..` or empty segments, or put a wildcard in a folder name are ignored and listed in the label. Nothing outside `user://` is ever touched, `user://` itself never, and a symlinked folder is not looked into (a link itself is removed as a link). Because this runs unattended on every Play, keep patterns narrow: the dialog's count is the preview.
+
 ## Running Tests
 
 Every suite calls the plugin's real code in `user_data_ops.gd`; nothing is re-implemented in the tests.
@@ -255,6 +275,7 @@ godot --headless --path . --script tests/test_filter_logic.gd
 godot --headless --path . --script tests/test_file_operations.gd
 godot --headless --path . --script tests/test_deletion_safety.gd
 godot --headless --path . --script tests/test_zip.gd
+godot --headless --path . --script tests/test_clean_on_play.gd
 godot --headless --path . --script tests/test_preview.gd
 godot --headless --path . --script tests/test_restore_zip.gd
 ```
@@ -272,6 +293,7 @@ godot --headless --path . --script tests/test_restore_zip.gd
 | `test_preview.gd` | Preview: JSON pretty-print, invalid JSON error line, cut at `max_bytes` (not inside a character), hex dump format, refused outside `user://`, folder summary, missing file, first `.jsonl` rows |
 | `test_restore_zip.gd` | Restore Zip: round trip with Zip Selected, overwrite preview, hostile names (`..`, absolute, drive letter, backslash), nothing written outside `user://`, symlinked folders refused |
 | `test_zip.gd` | Zip Selected: relative entry names, folders with hidden files, refused paths, empty selection, a zip never inside itself, same selection as Delete |
+| `test_clean_on_play.gd` | Clean on Play: exact paths, trailing-slash folders, globs in a subfolder, no recursion, invalid patterns ignored and reported, nothing outside `user://`, symlinked folders not entered, minimal and de-duplicated results, exactly the matches deleted |
 | `test_file_operations.gd` | Folder sizes (nested, hidden, missing), emptying a folder, deleting paths, status-bar stats |
 
 ### CI Integration

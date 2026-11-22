@@ -151,6 +151,122 @@ static func delete_paths(paths: Array[String]) -> Dictionary:
 	return {"deleted": deleted, "failed": failed}
 
 
+# -- Clean on Play -------------------------------------------------------------
+
+
+## Parses one Clean on Play pattern. Returns {"valid": bool, "dir": String,
+## "name": String, "folder_only": bool, "glob": bool}: [code]dir[/code] is the
+## literal parent folder relative to user:// ("" for the top level) and
+## [code]name[/code] the last segment (a glob when it has [code]*[/code] or
+## [code]?[/code]). Blank, absolute, drive-letter, backslash, "." / ".." / empty
+## segments and a wildcard outside the last segment are invalid.
+static func _parse_clean_pattern(pattern: String) -> Dictionary:
+	var bad := {"valid": false, "dir": "", "name": "", "folder_only": false, "glob": false}
+	var text := pattern.strip_edges()
+	if text == "" or text.begins_with("/") or text.contains("\\") or text.contains(":"):
+		return bad
+	var folder_only := text.ends_with("/")
+	if folder_only:
+		text = text.trim_suffix("/")
+	var parts := text.split("/")
+	for i: int in parts.size():
+		var part: String = parts[i]
+		if part == "" or part == "." or part == "..":
+			return bad
+		if i < parts.size() - 1 and (part.contains("*") or part.contains("?")):
+			return bad
+	var name: String = parts[parts.size() - 1]
+	var dir_parts := PackedStringArray()
+	for i: int in parts.size() - 1:
+		dir_parts.append(parts[i])
+	return {
+		"valid": true,
+		"dir": "/".join(dir_parts),
+		"name": name,
+		"folder_only": folder_only,
+		"glob": name.contains("*") or name.contains("?"),
+	}
+
+
+## The patterns [method clean_targets] ignores (blank entries are skipped
+## without being reported).
+static func invalid_patterns(patterns: PackedStringArray) -> PackedStringArray:
+	var out := PackedStringArray()
+	for pattern: String in patterns:
+		if pattern.strip_edges() != "" and not _parse_clean_pattern(pattern).valid:
+			out.append(pattern)
+	return out
+
+
+## True when [param rel_dir] (relative to user://) exists and no folder on the
+## way to it is a symbolic link.
+static func _clean_dir_is_plain(rel_dir: String) -> bool:
+	var current := ROOT_PATH
+	if rel_dir != "":
+		for part: String in rel_dir.split("/"):
+			var next := current.path_join(part)
+			if _is_link(next) or not DirAccess.dir_exists_absolute(next):
+				return false
+			current = next
+	return true
+
+
+## Existing user:// paths that [param patterns] select for Clean on Play,
+## de-duplicated and minimal (nothing inside another returned path), each
+## passing [method is_safe_target]. Patterns are relative to user://:
+## an exact path ("test_runner", "saves/slot_0/progress.json"), a folder with a
+## trailing "/" ("test_runner/": folders only), or a glob in the last segment
+## only ("*.tmp", "saves/*.bak"; [code]*[/code] and [code]?[/code], matched with
+## [method String.match] against the names in that one folder). There is no
+## recursive "**". Invalid patterns ([method invalid_patterns]) match nothing;
+## folders are never globbed into through a symbolic link.
+static func clean_targets(patterns: PackedStringArray) -> Array[String]:
+	var found := {}
+	for pattern: String in patterns:
+		var parsed := _parse_clean_pattern(pattern)
+		if not parsed.valid or not _clean_dir_is_plain(parsed.dir):
+			continue
+		var base := ROOT_PATH if parsed.dir == "" else ROOT_PATH.path_join(parsed.dir)
+		var names: Array[String] = []
+		if parsed.glob:
+			var dir := DirAccess.open(base)
+			if dir == null:
+				continue
+			dir.include_hidden = true
+			dir.list_dir_begin()
+			var entry := dir.get_next()
+			while entry != "":
+				if entry != "." and entry != ".." and entry.match(parsed.name):
+					names.append(entry)
+				entry = dir.get_next()
+			dir.list_dir_end()
+		else:
+			names.append(parsed.name)
+		for entry_name: String in names:
+			var full := base.path_join(entry_name)
+			var exists := _is_link(full) or FileAccess.file_exists(full) or DirAccess.dir_exists_absolute(full)
+			if not exists or not is_safe_target(full):
+				continue
+			if parsed.folder_only and not DirAccess.dir_exists_absolute(full):
+				continue
+			found[full] = true
+	var sorted: Array[String] = []
+	for path: String in found:
+		sorted.append(path)
+	sorted.sort()
+	var minimal: Array[String] = []
+	for path: String in sorted:
+		if minimal.is_empty() or not path.begins_with(minimal[minimal.size() - 1] + "/"):
+			minimal.append(path)
+	return minimal
+
+
+## Deletes what [method clean_targets] selects. Same result shape as
+## [method delete_paths]: {"deleted": int, "failed": Array[String]}.
+static func clean_on_play(patterns: PackedStringArray) -> Dictionary:
+	return delete_paths(clean_targets(patterns))
+
+
 ## Recursively deletes everything inside [param path] (not the folder itself),
 ## removing symlinks without following them. Returns the number of failures.
 static func delete_directory_contents(path: String) -> int:

@@ -212,6 +212,16 @@ func show_confirmation_dialog() -> void:
 	zip_btn.pressed.connect(_on_zip_pressed.bind(zip_btn))
 	toolbar_hbox.add_child(zip_btn)
 
+	var restore_btn := Button.new()
+	restore_btn.text = "Restore Zip…"
+	restore_btn.icon = base.get_theme_icon("Load", "EditorIcons")
+	for state: String in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color"]:
+		restore_btn.add_theme_color_override(state, Color.hex(0xE0A55CFF))
+	restore_btn.tooltip_text = "Extract a .zip (e.g. from Zip Selected) into user://, after showing what it will overwrite"
+	restore_btn.flat = false
+	restore_btn.pressed.connect(_on_restore_pressed.bind(restore_btn))
+	toolbar_hbox.add_child(restore_btn)
+
 	var toolbar_spacer := Control.new()
 	toolbar_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar_hbox.add_child(toolbar_spacer)
@@ -810,6 +820,7 @@ func _on_help_pressed() -> void:
 		["Open in OS", "\"Open Folder\" launches user:// in your operating system's native file manager."],
 		["Copy Logs", "Copy the contents of every log file in user://logs/ to your clipboard in one click."],
 		["Zip Selected", "Save the checked, visible items as one .zip, paths kept relative to user://: attach it to a bug report, or keep a snapshot before deleting."],
+		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
 		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
 	]
@@ -1100,6 +1111,49 @@ func _on_zip_pressed(btn: Button) -> void:
 	picker.canceled.connect(picker.queue_free)
 	EditorInterface.get_base_control().add_child(picker)
 	picker.popup_file_dialog()
+
+
+## Picks a .zip, shows what restoring it would write and overwrite, then
+## extracts it into user:// (see UserDataOps.unzip_into_user).
+func _on_restore_pressed(btn: Button) -> void:
+	var picker := EditorFileDialog.new()
+	picker.file_mode = EditorFileDialog.FILE_MODE_OPEN_FILE
+	picker.access = EditorFileDialog.ACCESS_FILESYSTEM
+	picker.add_filter("*.zip", "Zip archive")
+	picker.title = "Restore a .zip into user://"
+	picker.current_dir = OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
+	picker.file_selected.connect(func(zip_path: String) -> void:
+		picker.queue_free()
+		_confirm_restore(btn, zip_path)
+	)
+	picker.canceled.connect(picker.queue_free)
+	EditorInterface.get_base_control().add_child(picker)
+	picker.popup_file_dialog()
+
+
+func _confirm_restore(btn: Button, zip_path: String) -> void:
+	var listing := UserDataOps.zip_listing(zip_path)
+	if listing.error != OK or listing.entries.is_empty():
+		_show_copy_feedback(btn, "Nothing to restore")
+		return
+	var text := "Restore %d file(s) from %s into user://?" % [listing.entries.size(), zip_path.get_file()]
+	if not listing.existing.is_empty():
+		text += "\n\n%d existing file(s) will be overwritten." % listing.existing.size()
+	if not listing.unsafe.is_empty():
+		text += "\n%d entr(ies) point outside user:// and will be skipped." % listing.unsafe.size()
+	var confirm := ConfirmationDialog.new()
+	confirm.title = "Restore Zip"
+	confirm.dialog_text = text
+	confirm.get_ok_button().text = "Restore"
+	confirm.confirmed.connect(func() -> void:
+		var result := UserDataOps.unzip_into_user(zip_path)
+		_on_refresh_tree()
+		_show_copy_feedback(btn, "Restored %d file(s)" % result.files)
+		confirm.queue_free()
+	)
+	confirm.canceled.connect(confirm.queue_free)
+	EditorInterface.get_base_control().add_child(confirm)
+	confirm.popup_centered()
 
 
 ## Shows brief feedback text on a button, then restores the original text.

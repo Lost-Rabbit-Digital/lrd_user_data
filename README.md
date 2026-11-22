@@ -257,7 +257,7 @@ godot --headless --path . --script tests/test_zip.gd
 
 | Test File | What It Covers |
 |---|---|
-| `test_format_file_size.gd` | Byte/KB/MB formatting, boundary values |
+| `test_format_file_size.gd` | Byte/KB/MB/GB formatting, boundary values |
 | `test_file_type_label.gd` | Extension → label mapping (incl. `.bak`, `.tmp`, `.jsonl`, `.log`), case insensitivity, unknown extensions |
 | `test_filter_logic.gd` | Search and every type filter, real `Tree` filtering (containers, ancestors, `test_runner/`), and what a filtered delete plans to remove |
 | `test_deletion_safety.gd` | The plugin's real deletion code against real files: unchecked children survive, filtered-out items survive, whole-folder deletes, refusal outside `user://`, dotfiles, status-bar stats |

@@ -453,3 +453,81 @@ static func _collect_files(path: String, out: Array[String]) -> void:
 				out.append(full_path)
 		file_name = dir.get_next()
 	dir.list_dir_end()
+
+
+# -- Restore from zip ----------------------------------------------------------
+
+
+## What restoring [param zip_path] into user:// would do, without writing:
+## {"error": Error, "entries": Array[String] (destination paths),
+##  "existing": Array[String] (those that would be overwritten),
+##  "unsafe": Array[String] (entry names that would be skipped)}.
+static func zip_listing(zip_path: String) -> Dictionary:
+	var entries: Array[String] = []
+	var existing: Array[String] = []
+	var unsafe: Array[String] = []
+	var reader := ZIPReader.new()
+	var err := reader.open(zip_path)
+	if err != OK:
+		return {"error": err, "entries": entries, "existing": existing, "unsafe": unsafe}
+	for name: String in reader.get_files():
+		if name.ends_with("/"):
+			continue  # A folder entry: folders are made as files need them.
+		var dest := restore_destination(name)
+		if dest == "":
+			unsafe.append(name)
+			continue
+		entries.append(dest)
+		if FileAccess.file_exists(dest):
+			existing.append(dest)
+	reader.close()
+	return {"error": OK, "entries": entries, "existing": existing, "unsafe": unsafe}
+
+
+## The user:// path a zip entry restores to, or "" when the entry must be
+## refused: anything that would land outside user:// or on user:// itself
+## ("..", ".", empty or backslash segments, absolute or drive-letter names),
+## or that would write through a symbolic link inside user://.
+static func restore_destination(entry_name: String) -> String:
+	if entry_name.begins_with("/") or entry_name.contains(":") or entry_name.contains("\\"):
+		return ""
+	var dest := ROOT_PATH + entry_name
+	if not is_safe_target(dest):
+		return ""
+	var walk := ROOT_PATH
+	for part: String in entry_name.split("/"):
+		walk = walk.path_join(part) if walk != ROOT_PATH else ROOT_PATH + part
+		if _is_link(walk):
+			return ""
+	return dest
+
+
+## Extracts [param zip_path] (e.g. from Zip Selected) into user://, entry names
+## taken as paths relative to user://. Existing files are overwritten; unsafe
+## entries (see [method restore_destination]) are skipped and nothing outside
+## user:// is ever written. Returns {"error": Error, "files": int,
+## "skipped": Array[String]}.
+static func unzip_into_user(zip_path: String) -> Dictionary:
+	var skipped: Array[String] = []
+	var reader := ZIPReader.new()
+	var err := reader.open(zip_path)
+	if err != OK:
+		return {"error": err, "files": 0, "skipped": skipped}
+	var written := 0
+	for name: String in reader.get_files():
+		if name.ends_with("/"):
+			continue
+		var dest := restore_destination(name)
+		if dest == "":
+			skipped.append(name)
+			continue
+		DirAccess.make_dir_recursive_absolute(dest.get_base_dir())
+		var file := FileAccess.open(dest, FileAccess.WRITE)
+		if file == null:
+			skipped.append(name)
+			continue
+		file.store_buffer(reader.read_file(name))
+		file.close()
+		written += 1
+	reader.close()
+	return {"error": OK, "files": written, "skipped": skipped}

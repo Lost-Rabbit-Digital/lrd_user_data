@@ -5,13 +5,13 @@ Guide for coding agents (Claude Code reads it through `CLAUDE.md`). The user-fac
 ## What this repo is
 
 **Manage User Data**, a Godot **editor** plugin, published on the Godot Asset Library (asset 4811). It adds a toolbar
-button that opens a dialog listing `user://` as a tree with checkboxes, search, type filters, sizes, Copy Logs, **Zip Selected…** and
+button that opens a dialog listing `user://` as a tree with checkboxes, search, type filters, sizes, Copy Logs, **Zip Selected…**, **Restore Zip…** and
 **Delete Selected**. Nothing in it runs in an exported game.
 
 | Path | What it is |
 | --- | --- |
 | `addons/manage_user_data/plugin.gd` | The `EditorPlugin`: builds the dialog in code, populates the tree, wires buttons, help window, Copy Logs |
-| `addons/manage_user_data/user_data_ops.gd` | **All decision logic, editor-free**: deletion planning and removal, zipping, path safety, filters, labels, sizes. Loaded with `preload`, no `class_name` |
+| `addons/manage_user_data/user_data_ops.gd` | **All decision logic, editor-free**: deletion planning and removal, zipping and restoring, path safety, filters, labels, sizes. Loaded with `preload`, no `class_name` |
 | `addons/manage_user_data/plugin.cfg` | Name, version, `min_godot_version="4.3"` |
 | `tests/test_*.gd` | `extends SceneTree` suites that print `N passed, M failed` and exit non-zero on failure |
 | `tests/run_all.sh` | Parse-checks every addon script, then runs each suite |
@@ -27,7 +27,7 @@ godot --headless --path . --script res://tests/test_filter_logic.gd   # one suit
 
 ## Rules
 
-1. **Deletion safety is the product.** Only rows that are checked **and** visible are deleted; a folder goes whole only when it and every descendant are checked and visible; nothing outside `user://`; `user://` itself never; symlinks removed, never followed. These live in `user_data_ops.gd` and are pinned by `tests/test_deletion_safety.gd` and `tests/test_filter_logic.gd`. **Zip Selected** uses the same selection (`selected_paths`) and must stay read-only on the sources (`tests/test_zip.gd`). Any change near them needs a test that builds real files or a real `Tree`.
+1. **Deletion safety is the product.** Only rows that are checked **and** visible are deleted; a folder goes whole only when it and every descendant are checked and visible; nothing outside `user://`; `user://` itself never; symlinks removed, never followed. These live in `user_data_ops.gd` and are pinned by `tests/test_deletion_safety.gd` and `tests/test_filter_logic.gd`. **Zip Selected** uses the same selection (`selected_paths`) and must stay read-only on the sources (`tests/test_zip.gd`). **Restore Zip** must write nothing outside `user://`: every entry goes through `restore_destination` (`tests/test_restore_zip.gd` feeds it hostile archives). Any change near them needs a test that builds real files or a real `Tree`.
 2. **Logic goes in `user_data_ops.gd`, UI in `plugin.gd`.** If you can test it headless, it belongs in ops. Tests call ops directly. Never copy a function into a test to test it.
 3. **Godot 4.3 compatibility for the addon.** The plugin ships to projects on 4.3+, so no typed dictionaries or other 4.4+ syntax in `addons/`. Tests and the dev project target 4.7.
 4. **No `class_name` in the addon.** It installs into other people's projects; a global class name could collide. Use `preload`.

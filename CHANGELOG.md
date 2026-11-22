@@ -4,6 +4,11 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.9.0] (2026-11-22)
+
+- **Restore Zip…**: picks a `.zip` (such as one from Zip Selected), shows how many files it will write and how many existing files it will overwrite, then extracts it into `user://` with entry names taken relative to `user://`. Entries that would land outside `user://` or on `user://` itself (`..`, `.`, empty or backslash segments, absolute and drive-letter names: "zip-slip") are skipped, and so is anything that would be written through a symbolic link inside `user://`.
+- `UserDataOps.zip_listing()`, `restore_destination()` and `unzip_into_user()`, tested headless in `tests/test_restore_zip.gd` with crafted archives.
+
 ## [2.8.0] (2026-11-20)
 
 - **Zip Selected…**: saves exactly what Delete would remove (checked and visible; folders whole only when fully selected) as one `.zip`, with paths relative to `user://`, to attach to a bug report or keep as a snapshot before deleting. Hidden files inside folders are included; symbolic links and anything outside `user://` are skipped, and the archive is never added to itself. Defaults to the desktop with a `<project>_user_data_<timestamp>.zip` name and reveals the file when done.

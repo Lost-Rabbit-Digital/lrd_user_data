@@ -11,6 +11,8 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 - **Restore Zip never writes over the archive it is reading** (an entry that maps to the zip's own path inside `user://` is skipped and reported).
 - `clean_targets()` returns a truly minimal set: `a`, `a-b`, `a/c` used to return `a/c` as well as `a` (it sorts after `a-b`), over-counting matches and deletions.
 - A button's temporary feedback text ("Copied", "Zipped…") no longer touches the button after the dialog was closed.
+- After a single **Delete this…** (right-click), the tree is rebuilt keeping every other row's check state. It used to re-check everything, so a following Delete Selected could remove rows you had unchecked.
+- Preview no longer loads images over 8 MB (it showed a stall risk); it shows a note instead.
 
 ## [2.13.0] (2026-11-22)
 

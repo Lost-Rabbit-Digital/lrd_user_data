@@ -24,6 +24,7 @@ func _initialize() -> void:
 		test_jsonl_shows_the_first_lines,
 		test_jsonl_with_a_bad_line_names_its_line,
 		test_images_are_left_to_the_ui,
+		test_a_huge_image_is_not_loaded,
 		test_preview_never_changes_the_file,
 	]:
 		_reset()
@@ -153,6 +154,13 @@ func test_jsonl_with_a_bad_line_names_its_line() -> void:
 func test_images_are_left_to_the_ui() -> void:
 	var r := Ops.preview(_write("pic.png", PackedByteArray([0x89, 0x50, 0x4E, 0x47])))
 	_check(r.kind == "image" and r.text == "" and r.bytes == 4, "image kind, no text")
+
+
+func test_a_huge_image_is_not_loaded() -> void:
+	var big := PackedByteArray()
+	big.resize(Ops.PREVIEW_IMAGE_MAX_BYTES + 1)
+	var r := Ops.preview(_write("huge.png", big))
+	_check(r.kind == "text" and r.text.begins_with("Image too large"), "huge image: a note, not an image load")
 
 
 func test_preview_never_changes_the_file() -> void:

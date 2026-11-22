@@ -796,6 +796,8 @@ static func _sign(base: String, rel: String, state: Dictionary) -> void:
 const PREVIEW_IMAGE_EXTENSIONS := ["png", "jpg", "jpeg", "webp", "svg"]
 const PREVIEW_JSONL_LINES := 50
 const PREVIEW_HEX_BYTES := 256
+## Images larger than this are not loaded for a preview (it would stall the editor).
+const PREVIEW_IMAGE_MAX_BYTES := 8 * 1024 * 1024
 
 
 ## Read-only look at [param path] for the Preview pane. Reads at most
@@ -838,6 +840,11 @@ static func preview(path: String, max_bytes: int = 65536) -> Dictionary:
 	var ext := path.get_extension().to_lower()
 	if PREVIEW_IMAGE_EXTENSIONS.has(ext):
 		file.close()
+		if length > PREVIEW_IMAGE_MAX_BYTES:
+			out.kind = "text"
+			out.text = "Image too large to preview (%s)." % format_file_size(length)
+			out.truncated = true
+			return out
 		out.kind = "image"
 		return out
 	var window := maxi(max_bytes, 0)

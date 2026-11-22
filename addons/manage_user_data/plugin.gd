@@ -17,6 +17,10 @@ var preview_text: TextEdit
 var preview_image: TextureRect
 var preview_copy_btn: Button
 var active_type_filters: Array[int] = []
+var clean_matches_label: Label
+
+const META_SECTION := "manage_user_data"
+const DEFAULT_CLEAN_PATTERNS := "test_runner/"
 
 
 func _enter_tree() -> void:
@@ -41,6 +45,97 @@ func _exit_tree() -> void:
 
 	if confirmation_dialog:
 		confirmation_dialog.queue_free()
+
+
+## Called by the editor right before it runs the project. When Clean on Play is
+## enabled, deletes the items its patterns select (user_data_ops.gd decides what
+## that is). Always returns true: this never blocks a run.
+func _build() -> bool:
+	if _clean_enabled():
+		var patterns := _clean_patterns()
+		var result := UserDataOps.clean_on_play(patterns)
+		print("Manage User Data: cleaned %d item(s) before play" % result.deleted)
+		if not result.failed.is_empty():
+			push_warning("Manage User Data: %d item(s) could not be cleaned before play." % result.failed.size())
+		var invalid := UserDataOps.invalid_patterns(patterns)
+		if not invalid.is_empty():
+			push_warning("Manage User Data: ignored Clean on Play pattern(s): %s" % ", ".join(invalid))
+	return true
+
+
+func _clean_enabled() -> bool:
+	var settings := EditorInterface.get_editor_settings()
+	return bool(settings.get_project_metadata(META_SECTION, "clean_on_play_enabled", false))
+
+
+func _clean_pattern_text() -> String:
+	var settings := EditorInterface.get_editor_settings()
+	return str(settings.get_project_metadata(META_SECTION, "clean_on_play_patterns", DEFAULT_CLEAN_PATTERNS))
+
+
+func _clean_patterns() -> PackedStringArray:
+	return _split_patterns(_clean_pattern_text())
+
+
+func _split_patterns(text: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	for part: String in text.split(","):
+		if part.strip_edges() != "":
+			out.append(part.strip_edges())
+	return out
+
+
+func _build_clean_row() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+
+	var check := CheckBox.new()
+	check.text = "Clean on Play"
+	check.tooltip_text = "Delete the matching user:// items every time you press Play (off by default)"
+	check.button_pressed = _clean_enabled()
+	check.toggled.connect(_on_clean_enabled_toggled)
+	row.add_child(check)
+
+	var edit := LineEdit.new()
+	edit.placeholder_text = "test_runner/, *.tmp"
+	edit.text = _clean_pattern_text()
+	edit.tooltip_text = "Comma-separated, relative to user://: a path, a folder with a trailing /, or a * glob in the last segment (no **)"
+	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	edit.text_changed.connect(_on_clean_patterns_changed)
+	row.add_child(edit)
+
+	clean_matches_label = Label.new()
+	row.add_child(clean_matches_label)
+	_update_clean_matches()
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 6)
+	margin.add_theme_constant_override("margin_right", 6)
+	margin.add_theme_constant_override("margin_top", 4)
+	margin.add_theme_constant_override("margin_bottom", 4)
+	margin.add_child(row)
+	return margin
+
+
+func _on_clean_enabled_toggled(pressed: bool) -> void:
+	EditorInterface.get_editor_settings().set_project_metadata(META_SECTION, "clean_on_play_enabled", pressed)
+
+
+func _on_clean_patterns_changed(text: String) -> void:
+	EditorInterface.get_editor_settings().set_project_metadata(META_SECTION, "clean_on_play_patterns", text)
+	_update_clean_matches()
+
+
+func _update_clean_matches() -> void:
+	if clean_matches_label == null:
+		return
+	var patterns := _clean_patterns()
+	var count := UserDataOps.clean_targets(patterns).size()
+	var text := "%d item(s) match now" % count
+	var invalid := UserDataOps.invalid_patterns(patterns)
+	if not invalid.is_empty():
+		text += " (ignored: %s)" % ", ".join(invalid)
+	clean_matches_label.text = text
 
 
 func _on_button_pressed() -> void:
@@ -298,6 +393,8 @@ func show_confirmation_dialog() -> void:
 	split.add_child(_build_preview_panel())
 	vbox.add_child(split)
 
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(_build_clean_row())
 	vbox.add_child(HSeparator.new())
 
 	# === STATUS / WARNING BAR ===
@@ -580,6 +677,7 @@ func _on_refresh_tree() -> void:
 	await tween_out.finished
 
 	tree.clear()
+	_update_clean_matches()
 
 	var base := EditorInterface.get_base_control()
 	var root := tree.create_item()
@@ -931,6 +1029,7 @@ func _on_help_pressed() -> void:
 		["Preview", "Click a file to read it beside the tree: JSON pretty-printed (.jsonl shows its first rows), text, a hex dump for binary files, a thumbnail for images, a size summary for folders. Read-only, capped at 64 KB, and it never changes your selection."],
 		["Zip Selected", "Save the checked, visible items as one .zip, paths kept relative to user://: attach it to a bug report, or keep a snapshot before deleting."],
 		["Restore Zip", "Extract such a .zip back into user://. Shows how many files it will write and overwrite first; entries that would land outside user:// are skipped."],
+		["Clean on Play", "Optionally delete chosen user:// items (paths, folders with a trailing /, or * globs such as *.tmp) every time you press Play, so stale test data does not leak between runs. Off by default; the row below the tree shows how many items match now."],
 		["De-dupe Logs", "Copy godot.log with duplicate lines collapsed into \"(×N)\" summaries for compact sharing."],
 		["Refresh", "Rescans user:// at any time without reopening the plugin window."],
 	]
@@ -1122,6 +1221,7 @@ func _on_dialog_closed() -> void:
 		preview_copy_btn = null
 		filter_menu_button = null
 		clear_filter_btn = null
+		clean_matches_label = null
 		active_type_filters.clear()
 
 

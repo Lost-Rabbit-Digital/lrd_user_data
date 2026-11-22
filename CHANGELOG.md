@@ -4,6 +4,14 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 
 ## [Unreleased]
 
+## [2.11.0] (2026-11-22)
+
+- **Clean on Play**: optionally deletes chosen `user://` items every time you press Play, so stale test data, caches or a save don't leak between runs. A checkbox and a comma-separated pattern field (default `test_runner/`) in the dialog, with a live count of what matches; off by default, stored per project in the editor's project metadata. Implemented with `EditorPlugin._build()`, which always returns true, so it never blocks a run.
+- Patterns are relative to `user://`: an exact path, a folder with a trailing `/`, or a `*` / `?` glob in the last segment (`*.tmp`, `saves/*.bak`). No recursive `**`. Invalid patterns (absolute, drive letters, backslashes, `.`/`..`, wildcard folder names) are ignored and reported.
+- `UserDataOps.clean_targets()`, `invalid_patterns()` and `clean_on_play()`: results pass `is_safe_target`, are de-duplicated and minimal, never glob into symlinked folders, and are deleted through `delete_paths`. Tested headless in `tests/test_clean_on_play.gd`.
+
+- A top-level pattern made only of wildcards (`*`, `*/`, `?*`) is refused and reported: it would empty `user://` on every Play.
+
 ## [2.10.0] (2026-11-22)
 
 - **Preview pane**: selecting a row shows its contents beside the tree, so a save can be inspected without leaving the editor. JSON is pretty-printed (`.jsonl` shows its first 50 rows), invalid JSON shows the raw text with the error and line, binary files show a hex dump of the first 256 bytes, images show a thumbnail, folders show a file count and size. A **Copy** button copies the text. Read-only: it reads at most 64 KB, follows no symbolic links, and never changes the checkboxes.

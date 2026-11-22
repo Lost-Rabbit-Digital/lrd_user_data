@@ -97,7 +97,7 @@ The status bar shows a live count and total size of exactly what will be deleted
 - **Zip Selected** — Save exactly what's selected (same rules as Delete) as a `.zip`, to attach to a bug report or keep before deleting
 - **Clean on Play** — Optionally delete chosen `user://` items (paths, folders, `*` globs) automatically every time you press Play, so stale test data and caches don't leak between runs. Off by default
 - **Sort** — Order the tree by name, size or modified time; folders first, remembered per project
-- **Auto-refresh** — Optionally rescan `user://` every second while the dialog is open, keeping your checks, expanded folders, filters, sort and selection (off by default; new files start checked)
+- **Auto-refresh** — Optionally rescan `user://` every second while the dialog is open, keeping your checks, expanded folders, filters, sort and selection (off by default; a new file takes its folder's check state, so nothing appears checked inside a folder you unchecked)
 - **Refresh** — Rescan `user://` without reopening the plugin
 - **Version Check** — Warns on Godot versions below 4.3
 - **Error Resilience** — Gracefully handles unreadable files, locked directories, and permission errors
@@ -204,7 +204,7 @@ Returns an appropriate editor theme icon for the file type.
 | `clean_targets(patterns)` / `invalid_patterns(patterns)` / `clean_on_play(patterns)` | Clean on Play: the existing, safe, minimal `user://` paths the patterns select; the patterns it ignores; and `delete_paths` over the matches |
 | `sort_children(parent, key, cache)` | Reorders rows recursively (folders first; name, size, or modified time; ties by name) without touching check state, visibility or metadata |
 | `listing_signature(root)` | Hash over relative paths, sizes and modified times (hidden included, symlinked folders not entered, capped at 20000 entries): changes when `user://` changes |
-| `capture_state(root)` / `restore_state(root, state)` | Per-path check and collapsed state, put back after a rebuild; new rows stay checked |
+| `capture_state(root)` / `restore_state(root, state)` | Per-path check and collapsed state, put back after a rebuild; new rows take their folder's check state |
 | `delete_paths(paths)` | Removes them deepest first; refuses anything outside `user://` |
 | `describe(paths)` | `{files, folders, bytes}` for the status bar |
 | `filter_tree(root, search, filters)` | Sets row visibility for the search text and type filters |

@@ -25,6 +25,7 @@ func _initialize() -> void:
 	test_signature_does_not_follow_a_symlinked_folder()
 	test_capture_and_restore_keep_unchecked_and_collapsed()
 	test_restore_leaves_new_items_checked_and_ignores_gone_ones()
+	test_a_new_file_in_an_unchecked_folder_stays_unchecked()
 	_rm(TEST_DIR)
 	_rm(OUTSIDE_DIR)
 	if _tree:
@@ -243,7 +244,7 @@ func test_restore_leaves_new_items_checked_and_ignores_gone_ones() -> void:
 	DirAccess.remove_absolute(TEST_DIR.path_join("B_tie.txt"))
 	var fresh := _build()
 	Ops.restore_state(fresh, state)
-	_assert_true(_by_path(fresh, "brand_new.txt").is_checked(Ops.COL_CHECK), "a file that appeared after the capture is checked, like on first open")
+	_assert_true(_by_path(fresh, "brand_new.txt").is_checked(Ops.COL_CHECK), "a file that appeared in a checked folder is checked, like on first open")
 	_assert_true(not _by_path(fresh, "a_old.txt").is_checked(Ops.COL_CHECK), "an unchecked file that still exists stays unchecked")
 	_assert_true(_by_path(fresh, "B_tie.txt") == null, "state for a file that is gone is ignored")
 	DirAccess.remove_absolute(TEST_DIR.path_join("brand_new.txt"))
@@ -269,3 +270,20 @@ func _assert_eq(actual: Variant, expected: Variant, label: String) -> void:
 	else:
 		_fail_count += 1
 		print("  FAIL: %s — expected %s, got %s" % [label, str(expected), str(actual)])
+
+
+func test_a_new_file_in_an_unchecked_folder_stays_unchecked() -> void:
+	var root := _build()
+	var folder := _by_path(root, "a_dir")
+	folder.set_checked(Ops.COL_CHECK, false)
+	var child := folder.get_first_child()
+	while child != null:
+		child.set_checked(Ops.COL_CHECK, false)
+		child = child.get_next()
+	var state := Ops.capture_state(root)
+	_write("a_dir/appeared.txt", 3)
+	var fresh := _build()
+	Ops.restore_state(fresh, state)
+	_assert_true(not _by_path(fresh, "a_dir/appeared.txt").is_checked(Ops.COL_CHECK), "a file that appeared inside an unchecked folder is unchecked")
+	_assert_true(not Ops.plan_deletion(fresh).has(TEST_DIR.path_join("a_dir/appeared.txt")), "so Delete does not plan to remove it")
+	DirAccess.remove_absolute(TEST_DIR.path_join("a_dir/appeared.txt"))

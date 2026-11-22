@@ -628,13 +628,15 @@ static func _capture(item: TreeItem, out: Dictionary) -> void:
 		child = child.get_next()
 
 
-## Applies a [method capture_state] result to a freshly built tree. Rows that
-## are not in [param state] (files that appeared since) keep what the builder
-## gave them: checked, expanded, exactly as on first open. State for paths that
-## no longer exist is ignored. Visibility is not part of the state: re-apply the
+## Applies a [method capture_state] result to a freshly built tree. A row that
+## is not in [param state] (a file that appeared since) takes the check state of
+## its nearest folder that is: checked under a checked folder, as on first open,
+## but unchecked inside a folder the user unchecked, so it can't be deleted
+## without them having chosen it. State for paths that no longer exist is
+## ignored. Visibility is not part of the state: re-apply the
 ## search and type filters afterwards so "only checked and visible rows are
 ## deleted" keeps holding.
-static func restore_state(root: TreeItem, state: Dictionary) -> void:
+static func restore_state(root: TreeItem, state: Dictionary, inherited_checked: bool = true) -> void:
 	if root == null:
 		return
 	var path := _path_of(root)
@@ -643,9 +645,14 @@ static func restore_state(root: TreeItem, state: Dictionary) -> void:
 		root.set_checked(COL_CHECK, bool(saved.get("checked", true)))
 		if root.get_first_child() != null:
 			root.set_collapsed(bool(saved.get("collapsed", false)))
+	elif path != "" and path != ROOT_PATH:
+		# A row that appeared since the capture takes its folder's check state:
+		# a new file inside a folder the user unchecked must not become
+		# deletable behind their back.
+		root.set_checked(COL_CHECK, inherited_checked)
 	var child := root.get_first_child()
 	while child != null:
-		restore_state(child, state)
+		restore_state(child, state, root.is_checked(COL_CHECK))
 		child = child.get_next()
 
 

@@ -10,6 +10,7 @@ Notable changes to Manage User Data. Earlier versions are in the git history and
 - **Auto-refresh**: an off-by-default checkbox (remembered per project). While the dialog is open, a 1 second timer compares a cheap listing signature and rebuilds the tree only when `user://` changed, keeping checked/unchecked rows and expanded/collapsed folders (by path), the search text, type filters, sort and the selected row. Files that appear are checked by default, exactly like on first open.
 - Manual Refresh and Auto-refresh now re-apply the search and type filters after rebuilding, so rows a filter hides stay hidden and are not deleted.
 - `UserDataOps.sort_children()`, `listing_signature()` (hash of relative paths, sizes and modified times; hidden files included, symlinked folders never entered, capped at 20000 entries), `capture_state()`, `restore_state()` and `find_item_by_path()`. Tested headless in `tests/test_sort_refresh.gd`.
+- After an auto-refresh, a file that appeared since takes the check state of its folder: inside a folder you unchecked it stays unchecked, so Delete can't remove something you never chose.
 
 ## [2.11.0] (2026-11-22)
 
